@@ -1,134 +1,241 @@
-> **HARD GATE**: Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until you have presented a design and the user has approved it. This applies to EVERY project regardless of perceived simplicity.
+> **HARD GATE**: No implementation or scaffolding until user confirms refined artifacts.
 
-<!-- SOURCE: skills/brainstorming/SKILL.md -->
+<!-- SOURCE: Superpowers brainstorming (skills/brainstorming/SKILL.md) + specPower refine-phase adaptation -->
 
-# Brainstorming Ideas Into Designs
+# Refine-Phase Brainstorming: Attacking Deep Review
 
-Help turn ideas into fully formed designs and specs through natural collaborative dialogue.
+> This prompt is for **ATTACKING DEEP REVIEW** of plan-phase artifacts.
+> NOT from-scratch brainstorming. The 4 artifacts (proposal, specs, design, tasks)
+> already exist and must be challenged, deepened, and possibly updated.
 
-Start by understanding the current project context, then ask questions one at a time to refine the idea. Once you understand what you're building, present the design and get user approval.
+Plan already produced first-iteration drafts. Your job in refine is to **attack those drafts**:
+surface glossed-over assumptions, propose unconsidered alternatives, explore omitted boundaries,
+and question scope — then update whichever artifacts the discussion shows are out of sync.
 
-## Anti-Pattern: "This Is Too Simple To Need A Design"
+## Entry Context
 
-Every project goes through this process. A todo list, a single-function utility, a config change -- all of them. "Simple" projects are where unexamined assumptions cause the most wasted work. The design can be short (a few sentences for truly simple projects), but you MUST present it and get approval.
+Before running this brainstorming flow, you MUST have read:
 
-## Checklist
+- `specpower/changes/<name>/proposal.md`
+- `specpower/changes/<name>/specs/**/*.md`
+- `specpower/changes/<name>/design.md`
+- `specpower/changes/<name>/tasks.md`
+- `specpower/specs/` baseline (main specs) for reference
+- `.claude/specpower/prompts/refine/update-artifacts.md` (the delegated artifact-update methodology)
 
-You MUST create a task for each of these items and complete them in order:
+If any of the four change artifacts is missing, stop and tell the user to run `/specpower:plan` first.
 
-1. **Explore project context** -- check files, docs, recent commits
-2. **Ask clarifying questions** -- one at a time, understand purpose/constraints/success criteria
-3. **Propose 2-3 approaches** -- with trade-offs and your recommendation
-4. **Present design** -- in sections scaled to their complexity, get user approval after each section
-5. **Write design doc** -- save to `specpower/changes/<change-name>/design.md` and commit
-6. **Spec self-review** -- quick inline check for placeholders, contradictions, ambiguity, scope (see below)
-7. **User reviews written spec** -- ask user to review the spec file before proceeding
-8. **Transition to implementation** -- invoke specpower:build Phase A to create implementation plan
+## Iteration Rules
 
-## Process Flow
+- **Minimum 2 rounds** is unconditional. Round 1 is unconditional. Round 2 is unconditional.
+  Do not ask the user "should we keep going?" before round 2 finishes — minimum 2 rounds means
+  at least 2 rounds, every time.
+- After round 2, AI performs **semantic judgment of convergence** (see Step 8). If
+  meaningful unaddressed challenges, scope concerns, or stale artifact states remain,
+  run another round. If nothing substantive remains, proceed to the final next-step
+  announcement.
+- **No upper limit.** Refine continues as long as each round produces substantive new challenges.
+- The AI MUST explicitly announce `Round N start` when a round begins and `Round N end` when
+  the round's updates and diff summary are complete, so the user always knows which round they
+  are in.
+- The user may request additional rounds at any time (even after AI judges convergence); user
+  request overrides AI convergence judgment.
 
-```dot
-digraph brainstorming {
-    "Explore project context" [shape=box];
-    "Ask clarifying questions" [shape=box];
-    "Propose 2-3 approaches" [shape=box];
-    "Present design sections" [shape=box];
-    "User approves design?" [shape=diamond];
-    "Write design doc" [shape=box];
-    "Spec self-review\n(fix inline)" [shape=box];
-    "User reviews spec?" [shape=diamond];
-    "Invoke specpower:build Phase A" [shape=doublecircle];
+## The 9-Step Process (per round)
 
-    "Explore project context" -> "Ask clarifying questions";
-    "Ask clarifying questions" -> "Propose 2-3 approaches";
-    "Propose 2-3 approaches" -> "Present design sections";
-    "Present design sections" -> "User approves design?";
-    "User approves design?" -> "Present design sections" [label="no, revise"];
-    "User approves design?" -> "Write design doc" [label="yes"];
-    "Write design doc" -> "Spec self-review\n(fix inline)";
-    "Spec self-review\n(fix inline)" -> "User reviews spec?";
-    "User reviews spec?" -> "Write design doc" [label="changes requested"];
-    "User reviews spec?" -> "Invoke specpower:build Phase A" [label="approved"];
-}
-```
+Each round runs all 9 steps in order. Steps 1–2 are where the 4 challenge behaviors are
+injected; steps 3–5 carry the discussion into artifacts; steps 6–8 close the round.
 
-**The terminal state is invoking specpower:build Phase A.** Do NOT invoke any implementation skill directly. The ONLY next step after brainstorming is specpower:build Phase A.
+### Step 1 — Examine existing artifacts (inject Challenge Behavior #1)
 
-## The Process
+Re-read all 4 plan-phase artifacts with fresh eyes. This is not a summary exercise — look for
+what the plan *did not* say. Explicitly INJECT **Challenge Behavior #1 (challenge plan's
+assumptions)** here: list assumptions the plan glossed over and explain why each matters. Each
+round MUST produce this list of challenged assumptions, even if shorter than the previous round.
 
-**Understanding the idea:**
+### Step 2 — Ask clarifying questions (inject Challenge Behaviors #3 and #4)
 
-- Check out the current project state first (files, docs, recent commits)
-- Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
-- If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec -> plan -> implementation cycle.
-- For appropriately-scoped projects, ask questions one at a time to refine the idea
-- Prefer multiple choice questions when possible, but open-ended is fine too
-- Only one question per message - if a topic needs more exploration, break it into multiple questions
-- Focus on understanding: purpose, constraints, success criteria
+Ask the user clarifying questions one at a time, prefering multiple-choice where the options
+are reasonably enumerable. This is where you INJECT **Challenge Behavior #3 (explore omitted
+boundaries)** — survey edge cases, permissions, error modes, non-functional concerns absent
+from specs — and **Challenge Behavior #4 (question scope)** — ask whether the change is too
+broad, too narrow, or should be split. Clarifying questions are how you explore boundaries
+the plan omitted and how you question scope with the user directly.
 
-**Exploring approaches:**
+Keep per-message questions small (1 question per message). Batch the mental exploration but
+serialize the user-facing dialogue.
 
-- Propose 2-3 different approaches with trade-offs
-- Present options conversationally with your recommendation and reasoning
-- Lead with your recommended option and explain why
+### Step 3 — Propose 2-3 approaches with trade-offs (inject Challenge Behavior #2)
 
-**Presenting the design:**
+For every non-trivial design decision surfaced by Steps 1–2 (both the ones in the existing
+`design.md` and new ones revealed by this round's challenges), INJECT **Challenge Behavior #2
+(propose new options)**: for each existing decision, propose alternative approaches not
+considered in the plan — at least 2 such alternatives per decision, each with pros/cons and
+a recommendation.
 
-- Once you believe you understand what you're building, present the design
-- Scale each section to its complexity: a few sentences if straightforward, up to 200-300 words if nuanced
-- Ask after each section whether it looks right so far
-- Cover: architecture, components, data flow, error handling, testing
-- Be ready to go back and clarify if something doesn't make sense
+The 2-3 approaches MUST include the currently-chosen option from `design.md` PLUS genuinely
+different alternatives — not cosmetic variants. If the existing choice still wins, say so
+explicitly with a rationale that references the alternatives considered.
 
-**Design for isolation and clarity:**
+### Step 4 — Present design sections (show proposed updates)
 
-- Break the system into smaller units that each have one clear purpose, communicate through well-defined interfaces, and can be understood and tested independently
-- For each unit, you should be able to answer: what does it do, how do you use it, and what does it depend on?
-- Can someone understand what a unit does without reading its internals? Can you change the internals without breaking consumers? If not, the boundaries need work.
-- Smaller, well-bounded units are also easier for you to work with - you reason better about code you can hold in context at once, and your edits are more reliable when files are focused. When a file grows large, that's often a signal that it's doing too much.
+Present the design sections being proposed for update. Scale each section to its complexity:
+a few sentences for straightforward points, up to 200–300 words when a decision is nuanced.
+Show the user what would change in `design.md`, which `specs/**/*.md` files would be touched,
+and whether `proposal.md` or `tasks.md` are affected. Ask after each significant section
+whether the direction looks right.
 
-**Working in existing codebases:**
+### Step 5 — Write/update artifacts (DELEGATE)
 
-- Explore the current structure before proposing changes. Follow existing patterns.
-- Where existing code has problems that affect the work (e.g., a file that's grown too large, unclear boundaries, tangled responsibilities), include targeted improvements as part of the design - the way a good developer improves code they're working in.
-- Don't propose unrelated refactoring. Stay focused on what serves the current goal.
+DELEGATE to `.claude/specpower/prompts/refine/update-artifacts.md` for impact analysis, user
+scope choice (A/B/C), format preservation rules, per-artifact routing, and post-update
+validation.
 
-## After the Design
+Do not re-invent the artifact update rules here — the delegated prompt owns them. Return here
+only after the delegated update-artifacts prompt reports back that files are written and
+validated.
 
-**Documentation:**
+### Step 6 — Self-review (format + consistency)
 
-- Write the validated design (spec) to `specpower/changes/<change-name>/design.md`
-  - (User preferences for spec location override this default)
-- Use clear, concise writing
-- Commit the design document to git
+With fresh eyes on the just-updated artifacts:
 
-**Spec Self-Review:**
-After writing the spec document, look at it with fresh eyes:
+1. **Placeholder scan** — no "TBD", "TODO", or vague requirements; fix inline.
+2. **Internal consistency** — sections do not contradict each other; architecture matches
+   feature descriptions; spec scenarios match design decisions.
+3. **Format compliance** — run `specpower validate` on any updated spec file. See
+   `update-artifacts.md` "Post-update Validation" section for the expected behavior on
+   validation failure (revert + report).
+4. **Round-traceable discussion trail** — any newly resolved decision must appear in
+   `design.md` under `## Design Decisions` as a `### Decision N: <name>` block with
+   `**Options considered:**`, `**Chosen:**`, and `**Rationale:**`.
 
-1. **Placeholder scan:** Any "TBD", "TODO", incomplete sections, or vague requirements? Fix them.
-2. **Internal consistency:** Do any sections contradict each other? Does the architecture match the feature descriptions?
-3. **Scope check:** Is this focused enough for a single implementation plan, or does it need decomposition?
-4. **Ambiguity check:** Could any requirement be interpreted two different ways? If so, pick one and make it explicit.
+Fix issues inline. Do not re-enter Step 5 unless a revert happens.
 
-Fix any issues inline. No need to re-review -- just fix and move on.
+### Step 7 — Request user approval for this round
 
-**User Review Gate:**
-After the spec review loop passes, ask the user to review the written spec before proceeding:
+Present the round's diff summary (see `update-artifacts.md` "Diff Summary Format") and ask:
 
-> "Spec written and committed to `<path>`. Please review it and let me know if you want to make any changes before we start writing out the implementation plan."
+> "Round N produced these updates. Does the direction look correct, or do you want to revisit
+> anything before I continue to Step 8 (convergence judgment)?"
 
-Wait for the user's response. If they request changes, make them and re-run the spec review loop. Only proceed once the user approves.
+Wait for user acknowledgement. If the user requests revisions, loop back to Step 3 or Step 5
+as appropriate within this round.
 
-**Implementation:**
+### Step 8 — Judge convergence
 
-- Invoke specpower:build Phase A to create a detailed implementation plan
-- Do NOT invoke any other skill. specpower:build Phase A is the next step.
+Apply the convergence rules (see also "Convergence Criteria" section below):
 
-## Key Principles
+- **If this was Round 1**: unconditionally continue. Announce `Round 1 end` and immediately
+  start Round 2 from Step 1. The minimum-2-rounds rule is non-negotiable.
+- **If this was Round 2 or later**: perform AI semantic convergence judgment. Ask
+  yourself:
+  - "Are there still meaningful unaddressed challenges from the 4 challenge behaviors?"
+  - "Are there still open clarifying questions from Step 2?"
+  - "Are there scope concerns that have not been resolved or explicitly parked?"
+  - "Is any artifact still in a state that doesn't reflect the full discussion?"
+  - "Has the user introduced a new consideration in the latest round that has not yet
+    propagated into the artifacts?"
+- **If ANY of the above yields yes**: convergence NOT reached. Loop back to Step 1 for the
+  next round.
+- **If ALL yield no**: convergence reached. Proceed to Step 9.
 
-- **One question at a time** - Don't overwhelm with multiple questions
-- **Multiple choice preferred** - Easier to answer than open-ended when possible
-- **YAGNI ruthlessly** - Remove unnecessary features from all designs
-- **Explore alternatives** - Always propose 2-3 approaches before settling
-- **Incremental validation** - Present design, get approval before moving on
-- **Be flexible** - Go back and clarify when something doesn't make sense
+Remember: the user may override convergence. If after AI announces convergence the user says
+"actually, let's dig into X," that is treated as a new round — do not skip to Step 9.
+
+### Step 9 — Next-step indication (only at final convergence)
+
+Only reached when Step 8 produced "converged" AND the user did not override it.
+
+Announce clearly:
+
+> "Refine converged after N rounds. All artifacts have been updated and validated. Please
+> review the final state of proposal.md, specs/, design.md, tasks.md. Confirm that this
+> refined state is what you want — on confirmation I will mark phase as `refined` and you
+> can run `/specpower:build` next."
+
+Do NOT invoke phase transition directly from this prompt — the calling SKILL.md owns that
+handoff, which happens only after explicit user confirmation of the final refined state.
+
+## The 4 Challenge Behaviors
+
+The 4 behaviors are injected into the 9-step process above, but each round MUST produce
+explicit, substantive output for each. Do not let them be implicit. The user should be able
+to see each behavior fired in the round's output.
+
+### Behavior 1 — challenge plan's assumptions
+
+- **Rationale**: plan was a first-iteration pass; assumptions were made under incomplete
+  information and some were glossed over. Refine's job is to challenge those assumptions
+  before they harden into implementation.
+- **AI self-prompt**: "What did the plan treat as given that actually deserves interrogation?
+  What 'of course'-flavored premises are hiding in `proposal.md` or `design.md`?"
+- **Sample user-facing question**: "The plan implies that [X]. Is that actually true for this
+  user/context, or is it a plan-time shortcut?"
+- **Expected output per round**: a bulleted list titled "Plan assumptions under scrutiny"
+  with at least 1 item (generally 2-5 early rounds, trailing toward 0 as convergence nears).
+
+### Behavior 2 — propose new options
+
+- **Rationale**: plan usually picked the first-plausible option per decision. For each
+  existing design decision you should propose alternatives — alternatives are where better-fit
+  designs emerge.
+- **AI self-prompt**: "For each design decision already in `design.md`, what are the
+  alternatives the plan did not consider? For each new decision surfaced by this round's
+  challenges, what are the 2-3 approaches?"
+- **Sample user-facing question**: "The plan chose [current approach] for decision D3. I
+  also see two alternatives worth considering: [alt A] and [alt B]. Shall I walk through
+  trade-offs?"
+- **Expected output per round**: for at least one existing decision, a block showing
+  `currently chosen` + `alternative A` + `alternative B` with pros/cons for each.
+
+### Behavior 3 — explore omitted boundaries
+
+- **Rationale**: plan specs are drafted under time pressure and tend to cover happy paths
+  first. You must explore omitted boundaries — edge cases, permissions, errors,
+  non-functional concerns — because those are the most common omissions.
+- **AI self-prompt**: "What scenarios belong in the specs but are missing? What permission,
+  auth, or concurrency case isn't covered? What error/failure mode has no `#### Scenario:`?"
+- **Sample user-facing question**: "I don't see a scenario for [failure mode / concurrent
+  user / permission-denied path]. Should it be added, explicitly excluded, or deferred?"
+- **Expected output per round**: a checklist of boundary scenarios examined, each marked
+  `covered` / `missing → propose adding` / `explicitly out of scope`.
+
+### Behavior 4 — question scope
+
+- **Rationale**: plan sets scope early with incomplete information. Refine is the right
+  place to question scope — whether the change is too broad (decompose), too narrow
+  (expand), or mis-cut (split capability A from B).
+- **AI self-prompt**: "Does the change try to do too much? Too little? Are any capabilities
+  being bundled that should live in separate changes?"
+- **Sample user-facing question**: "Capability [X] and capability [Y] are being changed
+  together in this proposal. They seem to have independent rollout schedules. Should they
+  split into two changes?"
+- **Expected output per round**: a short paragraph titled "Scope check this round" with a
+  stance (scope is fine / too broad / too narrow / should split) and supporting reasoning.
+
+## Format Compliance
+
+Format compliance is fully delegated to `.claude/specpower/prompts/refine/update-artifacts.md`.
+Do not duplicate the format rules here — read that prompt during Step 5. In summary, it
+owns: per-artifact format preservation, `specpower validate` gating, revert-on-failure, and
+diff summary format.
+
+## Convergence Criteria
+
+- **At least 2 rounds** is unconditional (minimum 2 rounds). Do not short-circuit.
+- After round 2, convergence is decided by AI **semantic judgment** using the questions in
+  Step 8.
+- Convergence is a product of: no remaining unaddressed challenges across the 4 behaviors,
+  no open clarifying questions, no stale artifacts.
+- The user can extend past AI-declared convergence at any time.
+- Each round's convergence decision and its reasoning MUST be visible to the user (part of
+  the round-end announcement in Step 8).
+
+## Next Step
+
+After Step 9 announces final convergence AND the user confirms the refined state:
+the calling SKILL.md will invoke `specpower change phase <name> --set refined`, then suggest
+`/specpower:build` as the next slash command to run.
+
+This prompt itself never writes the phase transition — that is the SKILL orchestrator's job,
+and it happens only after explicit user confirmation of the refined state.
