@@ -9,15 +9,17 @@ export {
 export {
   readChangeMetadata,
   writeChangeMetadata as writeChangeMetadataToDir,
+  CHANGE_PHASES,
 } from './change-metadata.js';
 
-export type { ChangeMetadata } from './change-metadata.js';
+export type { ChangeMetadata, ChangePhase } from './change-metadata.js';
 
 export {
   getChangeDir,
   getChangeMetadata,
   writeChangeMetadata,
   listChanges,
+  updatePhase,
 } from './change-utils.js';
 
 export {

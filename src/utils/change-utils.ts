@@ -1,7 +1,10 @@
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { readChangeMetadata, writeChangeMetadata as writeMetaInternal } from './change-metadata.js';
-import type { ChangeMetadata } from './change-metadata.js';
+import type { ChangeMetadata, ChangePhase } from './change-metadata.js';
+
+export { CHANGE_PHASES } from './change-metadata.js';
+export type { ChangePhase } from './change-metadata.js';
 
 const CHANGES_REL_PATH = 'specpower/changes';
 
@@ -63,6 +66,36 @@ export async function writeChangeMetadata(
   validateChangeName(changeName);
   const changeDir = join(projectRoot, CHANGES_REL_PATH, changeName);
   await writeMetaInternal(changeDir, metadata);
+}
+
+/**
+ * Updates the `phase` field of an existing change's metadata, preserving all
+ * other fields. Throws if the change does not exist.
+ *
+ * @param changeName - Name of the change
+ * @param phase - The new phase value
+ * @param projectRoot - Absolute path to the project root (or archive root)
+ * @throws When the change does not exist or the name is invalid
+ */
+export async function updatePhase(
+  changeName: string,
+  phase: ChangePhase,
+  projectRoot: string,
+): Promise<void> {
+  validateChangeName(changeName);
+  const changeDir = join(projectRoot, CHANGES_REL_PATH, changeName);
+  const existing = await readChangeMetadata(changeDir);
+
+  if (existing === null) {
+    throw new Error(`Change "${changeName}" not found at ${changeDir}`);
+  }
+
+  const updated: ChangeMetadata = {
+    ...existing,
+    phase,
+  };
+
+  await writeMetaInternal(changeDir, updated);
 }
 
 /**

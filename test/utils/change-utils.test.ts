@@ -7,6 +7,7 @@ import {
   getChangeMetadata,
   writeChangeMetadata,
   listChanges,
+  updatePhase,
 } from '../../src/utils/change-utils.js';
 
 describe('change-utils', () => {
@@ -95,6 +96,50 @@ describe('change-utils', () => {
       const emptyRoot = join(tempDir, 'empty-project');
       const changes = await listChanges(emptyRoot);
       expect(changes).toEqual([]);
+    });
+  });
+
+  describe('writeChangeMetadata phase field', () => {
+    it('writes a phase field when provided in metadata', async () => {
+      await writeChangeMetadata(
+        'my-feature',
+        { schema: 'specpower', created: '2026-04-25', phase: 'plan' },
+        tempDir,
+      );
+
+      const metaPath = join(
+        tempDir,
+        'specpower',
+        'changes',
+        'my-feature',
+        '.specpower.yaml',
+      );
+      const content = await fsReadFile(metaPath, 'utf-8');
+      expect(content).toContain('phase: plan');
+    });
+  });
+
+  describe('updatePhase', () => {
+    it('updates only the phase field while preserving other metadata', async () => {
+      await writeChangeMetadata(
+        'my-feature',
+        { schema: 'specpower', created: '2026-04-25', phase: 'plan' },
+        tempDir,
+      );
+
+      await updatePhase('my-feature', 'refined', tempDir);
+
+      const metadata = await getChangeMetadata('my-feature', tempDir);
+      expect(metadata).not.toBeNull();
+      expect(metadata!.phase).toBe('refined');
+      expect(metadata!.schema).toBe('specpower');
+      expect(metadata!.created).toBe('2026-04-25');
+    });
+
+    it('throws an error containing "not found" when the change does not exist', async () => {
+      await expect(
+        updatePhase('nonexistent', 'built', tempDir),
+      ).rejects.toThrow(/not found/);
     });
   });
 });
