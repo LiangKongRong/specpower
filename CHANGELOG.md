@@ -14,6 +14,21 @@
 
 _尚未发布的变更记录在此。发布时移到新的版本标题下。_
 
+## [0.2.2] - 2026-04-26
+
+文档/skill 热修，显式标记 `/specpower:scan` 为 v0.3 规划中。NOT BREAKING。
+
+### Fixed
+
+- `/specpower:scan` CLI 子命令自 v0.1.0 起就未实现，却在 README 和 skill 列表里按"已提供"方式宣传，导致新用户在棕地场景执行 `/specpower:scan` 时撞 CLI unknown-command 错
+- `skills/specpower-scan/SKILL.md` 重写为 "PLANNED v0.3 — not yet functional"：触发时不再尝试运行 `specpower scan`，而是显式提示用户「scan 规划在 v0.3」并给出 v0.2.x 下的替代流程（直接 `/specpower:plan` 描述已有行为 + 新变更）
+- `README.md` 5 处 scan 引用全部加「规划中 · v0.3」标注：tagline、核心流程图、场景 2「接手已有项目」、命令速查表、故障排查段。场景 2 重写为推荐的 plan→refine→build→done 直链流程
+
+### Notes
+
+- CLI 行为、schema、其他 9 个 skill 全部无改动
+- `code-review-graph` 仍保留在 optionalDependencies 里为 v0.3 占位；v0.2.x 无需安装
+
 ## [0.2.1] - 2026-04-26
 
 Prompt 清晰度修补，端到端真实会话测试发现。NOT BREAKING，不改 CLI、不改 schema。

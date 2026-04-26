@@ -5,7 +5,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/specpower.svg)](https://www.npmjs.com/package/specpower)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-**一句话：scan 建基线，plan 想清楚，build 做到位，done 归档好。**
+**一句话：plan 想清楚，refine 打磨透，build 做到位，done 归档好。**
 
 SpecPower 把两个开源框架合并成一个工具：
 - **OpenSpec** — 结构化需求规划（proposal → specs → design → tasks）
@@ -114,7 +114,7 @@ specpower init
 **每阶段深度思考 → 多轮迭代精化**：每个阶段一次性产出实质内容（非占位骨架），再通过内部多轮迭代把 artifact 精化到稳态，最后进入执行。
 
 ```
-/specpower:scan    扫描已有代码，生成 specs 基线
+/specpower:scan    [规划中 · v0.3] 扫描已有代码生成 specs 基线；当前请直接用 /specpower:plan 描述已有行为
        ↓
 /specpower:plan    一次产出 4 个 artifact：proposal + delta specs + design + tasks（first-iteration 深度思考，非纯骨架）
        ↓
@@ -193,16 +193,20 @@ Claude Code 接下来会：
 /specpower:done             # 归档 + merge
 ```
 
-#### 场景 2：接手已有项目
+#### 场景 2：接手已有项目（v0.2.x 工作流）
 
 ```bash
 cd legacy-project
 specpower init
 
 # 在 Claude Code 里：
-/specpower:scan             # 扫描现有代码，生成 specs 基线
-# 用户确认扫描结果后：
-/specpower:plan "新功能描述"   # 正常走 plan→done 流程
+# 注意：/specpower:scan 当前规划在 v0.3，未实现。
+# v0.2.x 的推荐做法是直接进 plan，在 proposal Q&A 里描述已有行为 +
+# 新增变更，让 plan 为将要改动的 capability 生成 delta spec 基线。
+/specpower:plan "描述已有行为 + 你这次要改的新功能"
+/specpower:refine             # 对 plan 产出做 ≥2 轮攻击性审查
+/specpower:build              # Phase A 重写 tasks.md → Phase B TDD
+/specpower:done               # 归档，delta spec 合入主 specs/
 ```
 
 #### 场景 3：紧急修 Bug
@@ -241,7 +245,7 @@ specpower init
 
 | 命令 | 说明 |
 |---|---|
-| `/specpower:scan` | 扫描已有代码库，生成 specs 基线 |
+| `/specpower:scan` | **[规划中 · v0.3]** 扫描已有代码库生成 specs 基线；v0.2.x 未实现，触发时 skill 会提示替代方案 |
 | `/specpower:plan` | 需求规划：生成 proposal + delta specs |
 | `/specpower:refine` | 技术方案探讨（brainstorming + design.md） |
 | `/specpower:build` | 两阶段构建：生成计划 → subagent TDD 执行 |
@@ -412,7 +416,7 @@ npm install -g specpower
 
 ### code-review-graph 安装失败
 
-`/specpower:scan` 依赖 code-review-graph（在 optionalDependencies 里）。这个依赖是从 GitHub 安装的，如果网络问题导致失败，**不影响其他命令**——scan 之外的所有功能仍可用。
+`/specpower:scan` 规划在 v0.3 实现时会用到 code-review-graph（当前在 optionalDependencies 里占位）。这个依赖是从 GitHub 安装的，如果网络问题导致失败，**不影响任何 v0.2.x 功能**——scan 本身在 v0.2.x 不可用，其余所有命令与此依赖无关。
 
 ---
 
