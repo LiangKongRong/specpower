@@ -111,14 +111,22 @@ specpower init
 
 ## 核心流程
 
+**每阶段深度思考 → 多轮迭代精化**：每个阶段一次性产出实质内容（非占位骨架），再通过内部多轮迭代把 artifact 精化到稳态，最后进入执行。
+
 ```
 /specpower:scan    扫描已有代码，生成 specs 基线
        ↓
-/specpower:plan    描述你要做的功能，生成 proposal + delta specs
+/specpower:plan    一次产出 4 个 artifact：proposal + delta specs + design + tasks（first-iteration 深度思考，非纯骨架）
        ↓
-/specpower:refine  技术方案探讨（brainstorming），输出 design.md
+/specpower:refine  内部多轮精化循环（≥2 rounds，AI 收敛判定，不设上限）
+                   每轮攻击性审查 + 4 个挑战行为：
+                     · 挑战假设   · 提新 options
+                     · 探边界     · 质疑 scope
+                   可更新任意 artifact（proposal / specs / design / tasks）
        ↓
-/specpower:build   生成详细计划 → 逐任务 TDD 执行（subagent 模式）
+/specpower:build   Phase A：基于 refine 稳定后的 artifact，用 writing-plans 严格精化（rewrite）tasks.md
+                   Phase B：逐任务 TDD 执行（subagent 模式）
+                   design 有漏即停，回 refine 补齐
        ↓
 /specpower:review  代码审查（对照 specs 检查回归）
        ↓
@@ -127,6 +135,7 @@ specpower init
 /specpower:verify  双重校验（delta specs 验收 + 主 specs 回归）
        ↓
 /specpower:done    归档变更 → specs 合并 → git 分支清理
+                   默认要求 phase=built，可用 --force 跳过
 ```
 
 另外两个快捷命令：
@@ -134,6 +143,13 @@ specpower init
 /specpower:fix     修 Bug 一条龙（调试 → TDD 修复 → 自动归档）
 /specpower:snap    事后补档（从 git diff 反推变更记录）
 ```
+
+### 新机制（v0.2.0）
+
+- **plan 一次产出 4 artifact**：proposal、delta specs、design、tasks 同步生成，每个都是实质的"第一轮深度思考"（first-iteration），不再是占位骨架
+- **refine 内部多轮循环**：至少 2 轮，AI 语义判断收敛，不设上限；每轮显式执行 4 个挑战行为（挑战假设 / 提新 options / 探边界 / 质疑 scope）；可更新任意 artifact
+- **build Phase A 改为 rewrite**：不再是"生成" tasks.md，而是基于 refine 稳定后的 artifact 用 Superpowers writing-plans 严格规则"精化"重写；发现 design 缺漏即停并回 refine
+- **`.specpower.yaml` 新增 `phase` 字段**：追踪变更生命周期（`plan` / `refined` / `built` / `archived`）；`specpower change archive` 默认要求 `phase=built`，可用 `--force` 跳过守门
 
 ---
 
