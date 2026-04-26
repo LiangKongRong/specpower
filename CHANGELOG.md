@@ -14,6 +14,37 @@
 
 _尚未发布的变更记录在此。发布时移到新的版本标题下。_
 
+## [0.2.0] - 2026-04-26
+
+工作流深度迭代重构。plan 一次产出 4 artifact 的第一轮深度思考；refine 变为内部多轮攻击性审查（≥2 轮 + AI 语义收敛 + 4 个挑战行为 + Superpowers 9 步整合）；build Phase A 用 writing-plans 严格重写 tasks.md；新增 `.specpower.yaml` `phase` 字段追踪生命周期。NOT BREAKING。
+
+### Changed
+
+- `/specpower:plan` 改为一次产出全部 4 个 artifact（proposal + delta specs + design + tasks），每个都是实质的"第一轮深度思考"而非占位骨架
+- `/specpower:refine` 改为**内部自动多轮循环**（至少 2 轮，AI 语义判断收敛，不设上限），每轮显式执行 4 个挑战行为（挑战假设 / 提新 options / 探边界 / 质疑 scope），整合 Superpowers brainstorming 9 步流程
+- `/specpower:refine` 可更新任意 artifact（proposal / specs / design / tasks），更新前做影响分析让用户选择本轮范围（A 全做 / B 只主件 / C 推迟）
+- `/specpower:build` Phase A 从"生成 tasks.md"改为"重写 tasks.md"——基于 refine 稳定后的 artifact，用 Superpowers writing-plans 严格规则精化。分组重组需用户确认；发现 design 缺漏即停并回 refine
+
+### Added
+
+- `.specpower.yaml` 新增 `phase` 字段（`plan` / `refined` / `built` / `archived`）追踪变更生命周期
+- `specpower change phase <name>` CLI 子命令（读 / `--set <phase>` 写）
+- `specpower change archive --force` 标志位，跳过 phase 守门
+- 3 个新 prompt 文件：`prompts/plan/design-draft.md`、`prompts/plan/tasks-draft.md`、`prompts/refine/update-artifacts.md`
+- 参考样本 `prompts/reference/specpower/example-design.md`（archived create-specpower-plugin 的 design.md），供 plan/refine 阶段质量对齐
+
+### Compatibility
+
+- **NOT BREAKING**：CLI 命令签名、artifact graph 关系、schema.yaml 均未改动
+- 老版本（0.1.0）生成的 `.specpower.yaml` 文件没有 `phase` 字段，向后兼容：读为 `undefined`，`change archive` 会把它当作"非 built"而拒绝（可用 `--force` 跳过）
+- 已归档的变更（`openspec/changes/archive/*`）不受影响
+
+### Migration
+
+- 0.1.0 → 0.2.0 为 MINOR 升级，无破坏性变更
+- 活跃未归档的变更：建议完成当前阶段、`specpower change archive --force` 归档后，再用新流程新建变更
+- 新变更自动走新流程（`specpower change new` 产出含 `phase: plan` 的 `.specpower.yaml`）
+
 ## [0.1.0] - 2026-04-26
 
 首个公开版本。SpecPower 是一个 Claude Code 插件 + CLI 工具，统一 OpenSpec（需求规划）和 Superpowers（工程执行）两个框架。
@@ -66,5 +97,6 @@ _尚未发布的变更记录在此。发布时移到新的版本标题下。_
 - 在真实项目（notecli）端到端验证了 5 个主要技能
 - 零个已知的 Critical 或 Important 缺陷
 
-[Unreleased]: https://github.com/bstzyf/specpower/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/bstzyf/specpower/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/bstzyf/specpower/releases/tag/v0.2.0
 [0.1.0]: https://github.com/bstzyf/specpower/releases/tag/v0.1.0
