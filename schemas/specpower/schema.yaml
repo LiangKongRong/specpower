@@ -1,0 +1,48 @@
+name: specpower
+version: 3
+description: SpecPower workflow — scan → plan → refine → build → review → test → verify → done
+
+artifacts:
+  - id: scan
+    generates: "specpower/specs/**/*.md"
+    description: Brownfield project scan - generates specs baseline
+    requires: []
+
+  - id: proposal
+    generates: "proposal.md"
+    description: Initial proposal document outlining the change
+    requires: []
+    instruction: |
+      Create the proposal document that establishes WHY this change is needed.
+
+  - id: specs
+    generates: "specs/**/*.md"
+    description: Detailed specifications for the change
+    requires:
+      - proposal
+    instruction: |
+      Create specification files that define WHAT the system should do.
+
+  - id: design
+    generates: "design.md"
+    description: Technical design document with implementation details
+    requires:
+      - proposal
+    instruction: |
+      Create the design document that explains HOW to implement the change.
+
+  - id: tasks
+    generates: "tasks.md"
+    description: Implementation checklist with trackable tasks
+    requires:
+      - specs
+      - design
+    instruction: |
+      Create the task list that breaks down the implementation work.
+
+apply:
+  requires:
+    - tasks
+  tracks: tasks.md
+  instruction: |
+    Execute tasks using specPower TDD workflow.

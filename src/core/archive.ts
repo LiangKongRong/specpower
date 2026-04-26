@@ -1,0 +1,155 @@
+/**
+ * Archive module.
+ *
+ * Archives a completed change by:
+ * 1. Validating all delta specs in the change
+ * 2. Applying deltas to their corresponding main specs
+ * 3. Moving the change directory to the archive
+ */
+
+import { promises as fs } from 'node:fs';
+import { join, basename, relative } from 'node:path';
+import { validateSpec } from './validation/validator.js';
+import { applyDeltaSpec } from './specs-apply.js';
+
+export interface ArchiveResult {
+  readonly success: boolean;
+  readonly errors: readonly string[];
+  readonly archivePath?: string;
+}
+
+/**
+ * Recursively list all `.md` files in a directory, returning paths relative to the base dir.
+ */
+async function listMarkdownFiles(dir: string, base?: string): Promise<readonly string[]> {
+  const root = base ?? dir;
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    const results: string[] = [];
+
+    for (const entry of entries) {
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const nested = await listMarkdownFiles(fullPath, root);
+        results.push(...nested);
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        results.push(relative(root, fullPath));
+      }
+    }
+
+    return results;
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      'code' in error &&
+      (error as NodeJS.ErrnoException).code === 'ENOENT'
+    ) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+/**
+ * Get today's date as YYYY-MM-DD string.
+ */
+function todayDatePrefix(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Archive a completed change.
+ *
+ * Steps:
+ * 1. Find all delta spec files in `specpower/changes/<name>/specs/`
+ * 2. Validate each delta spec
+ * 3. For each delta spec, find the corresponding main spec in `specpower/specs/`
+ * 4. Apply deltas to main specs
+ * 5. Move the change directory to `specpower/changes/archive/<date>-<name>/`
+ * 6. Return success/failure with details
+ *
+ * @param changeName - The name of the change to archive
+ * @param projectRoot - Absolute path to the project root
+ * @returns An ArchiveResult with success flag, errors, and archive path
+ */
+export async function archiveChange(
+  changeName: string,
+  projectRoot: string,
+): Promise<ArchiveResult> {
+  const changeDir = join(projectRoot, 'specpower', 'changes', changeName);
+  const deltaSpecsDir = join(changeDir, 'specs');
+  const mainSpecsDir = join(projectRoot, 'specpower', 'specs');
+
+  // 1. Find delta spec files
+  const deltaFiles = await listMarkdownFiles(deltaSpecsDir);
+
+  if (deltaFiles.length === 0) {
+    return {
+      success: false,
+      errors: [`No delta spec files found in ${deltaSpecsDir}`],
+    };
+  }
+
+  // 2. Validate each delta spec
+  const allErrors: string[] = [];
+
+  for (const file of deltaFiles) {
+    const deltaContent = await fs.readFile(join(deltaSpecsDir, file), 'utf-8');
+    const validation = validateSpec(deltaContent);
+
+    if (!validation.valid) {
+      for (const err of validation.errors) {
+        allErrors.push(`${file}: ${err.message}`);
+      }
+    }
+  }
+
+  if (allErrors.length > 0) {
+    return { success: false, errors: allErrors };
+  }
+
+  // 3 & 4. Apply each delta to its corresponding main spec
+  for (const file of deltaFiles) {
+    const deltaContent = await fs.readFile(join(deltaSpecsDir, file), 'utf-8');
+    const mainSpecPath = join(mainSpecsDir, file);
+    const mainSpecDir = join(mainSpecPath, '..');
+    await fs.mkdir(mainSpecDir, { recursive: true });
+
+    let mainContent: string;
+    try {
+      mainContent = await fs.readFile(mainSpecPath, 'utf-8');
+    } catch (error: unknown) {
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        (error as NodeJS.ErrnoException).code === 'ENOENT'
+      ) {
+        // If main spec doesn't exist yet, start with empty content
+        mainContent = '';
+      } else {
+        throw error;
+      }
+    }
+
+    const updatedContent = applyDeltaSpec(mainContent, deltaContent);
+    await fs.writeFile(mainSpecPath, updatedContent, 'utf-8');
+  }
+
+  // 5. Move change directory to archive
+  const datePrefix = todayDatePrefix();
+  const archiveDir = join(projectRoot, 'specpower', 'changes', 'archive');
+  const archiveDest = join(archiveDir, `${datePrefix}-${changeName}`);
+
+  await fs.mkdir(archiveDir, { recursive: true });
+  await fs.rename(changeDir, archiveDest);
+
+  return {
+    success: true,
+    errors: [],
+    archivePath: archiveDest,
+  };
+}

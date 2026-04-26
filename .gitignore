@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.tgz
+
+# OpenSpec tooling used during specPower development.
+# Not part of the published package. Contributors who want to use OpenSpec
+# for working on specPower can run `openspec init` locally.
+.claude/

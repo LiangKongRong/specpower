@@ -1,0 +1,69 @@
+{
+  "name": "specpower",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Unified spec-driven development for Claude Code: OpenSpec planning + Superpowers execution merged into one CLI + plugin",
+  "keywords": [
+    "claude-code",
+    "spec-driven-development",
+    "tdd",
+    "openspec",
+    "superpowers",
+    "cli",
+    "ai",
+    "code-generation"
+  ],
+  "license": "MIT",
+  "author": "bstzyf",
+  "homepage": "https://github.com/bstzyf/specpower",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bstzyf/specpower.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bstzyf/specpower/issues"
+  },
+  "bin": {
+    "specpower": "./bin/specpower.js"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "main": "./dist/cli/index.js",
+  "exports": {
+    ".": "./dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "skills",
+    "prompts",
+    "schemas",
+    "templates"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run clean && npm run build && npm run test",
+    "release:patch": "npm version patch && git push && git push --tags",
+    "release:minor": "npm version minor && git push && git push --tags",
+    "release:major": "npm version major && git push && git push --tags"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "js-yaml": "^4.1.0",
+    "zod": "^3.24.4"
+  },
+  "optionalDependencies": {
+    "code-review-graph": "github:tirth8205/code-review-graph"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.2"
+  }
+}
