@@ -1,5 +1,10 @@
 # SpecPower
 
+[![CI](https://github.com/bstzyf/specpower/actions/workflows/ci.yml/badge.svg)](https://github.com/bstzyf/specpower/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/specpower.svg)](https://www.npmjs.com/package/specpower)
+[![npm downloads](https://img.shields.io/npm/dm/specpower.svg)](https://www.npmjs.com/package/specpower)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 **一句话：scan 建基线，plan 想清楚，build 做到位，done 归档好。**
 
 SpecPower 把两个开源框架合并成一个工具：
