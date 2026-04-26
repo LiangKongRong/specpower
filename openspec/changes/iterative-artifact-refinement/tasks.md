@@ -1,6 +1,6 @@
 ## 1. 基础设施：phase 元数据类型
 
-- [ ] 1.1 TEST: 为 ChangeMetadata 的 phase 字段写测试
+- [x] 1.1 TEST: 为 ChangeMetadata 的 phase 字段写测试
   - File: `test/utils/change-metadata.test.ts` (新建)
   - Test cases (5):
     - `readChangeMetadata(dir)` 读取含 `phase: plan` 的文件 → 返回对象含 `phase: "plan"`
@@ -10,7 +10,7 @@
     - 读取无 schema/created 字段 → 抛 "Invalid metadata format"（既有行为不变）
   - Verify: `npx vitest run test/utils/change-metadata.test.ts` → 5 tests FAIL (红)
 
-- [ ] 1.2 IMPLEMENT: 扩展 ChangeMetadata 类型 + Zod schema
+- [x] 1.2 IMPLEMENT: 扩展 ChangeMetadata 类型 + Zod schema
   - File: `src/utils/change-metadata.ts`
   - 改动点：
     - 新增 `export const CHANGE_PHASES = ["plan", "refined", "built", "archived"] as const`
@@ -21,7 +21,7 @@
   - Verify: `npx vitest run test/utils/change-metadata.test.ts` → 5 tests PASS (绿)
   - Verify: `npx tsc --noEmit` exits 0
 
-- [ ] 1.3 TEST: change-utils 暴露 phase 操作
+- [x] 1.3 TEST: change-utils 暴露 phase 操作
   - File: `test/utils/change-utils.test.ts` (扩展已有文件)
   - Test cases (3, 添加到已有 9 个后):
     - `writeChangeMetadata("my-feature", {schema, created, phase: "plan"}, tmpRoot)` → 写入的文件含 `phase: plan`
@@ -29,7 +29,7 @@
     - `updatePhase("nonexistent", "built", tmpRoot)` → 抛错含 "not found"
   - Verify: `npx vitest run test/utils/change-utils.test.ts` → 3 new tests FAIL
 
-- [ ] 1.4 IMPLEMENT: change-utils 的 updatePhase 函数
+- [x] 1.4 IMPLEMENT: change-utils 的 updatePhase 函数
   - File: `src/utils/change-utils.ts`
   - 新增：
     ```typescript
@@ -45,12 +45,12 @@
 
 ## 2. CLI：change new 初始化 phase
 
-- [ ] 2.1 TEST: change new 写入 phase=plan
+- [x] 2.1 TEST: change new 写入 phase=plan
   - File: `test/cli/change-new.test.ts` (扩展已有 4 个测试)
   - 新测试：`createChange("feat", tmpDir)` → 读取生成的 `.specpower.yaml` 含 `phase: plan` 行
   - Verify: `npx vitest run test/cli/change-new.test.ts` → 新测试 FAIL
 
-- [ ] 2.2 IMPLEMENT: change new 写入 phase
+- [x] 2.2 IMPLEMENT: change new 写入 phase
   - File: `src/cli/commands/change-new.ts`
   - 修改 `createChange` 内部构造的 metadata 对象，加 `phase: "plan"`
   - Verify: `npx vitest run test/cli/change-new.test.ts` → 全部 5 个测试 PASS
@@ -58,7 +58,7 @@
 
 ## 3. CLI：change phase 子命令
 
-- [ ] 3.1 TEST: change phase 子命令行为
+- [x] 3.1 TEST: change phase 子命令行为
   - File: `test/cli/change-phase.test.ts` (新建)
   - Test cases (5):
     - `getPhase("my-feature", tmpRoot)` 读取 phase → 返回 "plan"
@@ -68,7 +68,7 @@
     - `getPhase` 读取无 phase 字段的文件 → 返回 undefined（向后兼容）
   - Verify: `npx vitest run test/cli/change-phase.test.ts` → 5 tests FAIL
 
-- [ ] 3.2 IMPLEMENT: src/cli/commands/change-phase.ts
+- [x] 3.2 IMPLEMENT: src/cli/commands/change-phase.ts
   - File: `src/cli/commands/change-phase.ts` (新建)
   - 导出：
     - `getPhase(name: string, projectRoot: string): Promise<ChangePhase | undefined>`
@@ -81,7 +81,7 @@
 
 ## 4. CLI：change archive 加 phase 守门
 
-- [ ] 4.1 TEST: archive 的 phase 守门
+- [x] 4.1 TEST: archive 的 phase 守门
   - File: `test/cli/change-archive.test.ts` (扩展已有 3 个测试)
   - 新测试 (4):
     - 变更 phase=plan，不带 --force 调 archive → 抛错含 "Cannot archive: change ... is in phase plan, expected built"
@@ -90,21 +90,21 @@
     - 变更 phase=plan，带 --force → 成功归档（打印 warning 到 stderr）
   - Verify: 新测试 FAIL
 
-- [ ] 4.2 IMPLEMENT: archive 检查 phase
+- [x] 4.2 IMPLEMENT: archive 检查 phase
   - File: `src/core/archive.ts` - `archiveChange` 函数签名加第三参数 `options?: { force?: boolean }`
   - 逻辑：读 `.specpower.yaml` → phase !== "built" && !options.force → 返回 `{success: false, errors: ["Cannot archive..."]}`
   - File: `src/cli/commands/change-archive.ts` - 注册 `--force` option，传给 `archiveChange`
   - 归档成功后：归档目录的 `.specpower.yaml` phase 字段改为 "archived"（移动文件后用 `updatePhase` 更新）
   - Verify: `npx vitest run test/cli/change-archive.test.ts` + `test/core/archive.test.ts` 全过（3+4+4=11）
 
-- [ ] 4.3 TEST: archive 后目标 phase=archived
+- [x] 4.3 TEST: archive 后目标 phase=archived
   - File: `test/core/archive.test.ts` (扩展)
   - 新测试：phase=built 的 change 归档后，归档目录 `.specpower.yaml` 含 `phase: archived`
   - Verify: 测试 PASS（应该已经在 4.2 被实现）
 
 ## 5. 新增 prompt 文件 (plan 阶段)
 
-- [ ] 5.1 创建 `prompts/plan/design-draft.md`
+- [x] 5.1 创建 `prompts/plan/design-draft.md`
   - File: `prompts/plan/design-draft.md` (新建)
   - 内容要点：
     - HARD GATE 开头：强调 first-iteration deep analysis，不是占位
@@ -115,7 +115,7 @@
     - 明确 NOT 量化门槛：质量由用户审查，不搞"至少 N 个"
   - Verify: `wc -l prompts/plan/design-draft.md` ≥ 40; `grep -c "HARD GATE\|identify real\|options considered\|rationale" prompts/plan/design-draft.md` ≥ 4
 
-- [ ] 5.2 创建 `prompts/plan/tasks-draft.md`
+- [x] 5.2 创建 `prompts/plan/tasks-draft.md`
   - File: `prompts/plan/tasks-draft.md` (新建)
   - 内容要点：
     - 明确："Generate substantive first-iteration tasks. Not placeholders."
@@ -124,7 +124,7 @@
     - 要求文件头部注释指示这是 plan-phase 骨架（注：marker 最终放 `.specpower.yaml` phase 字段，但 prompt 里仍可有内联说明）
   - Verify: `wc -l prompts/plan/tasks-draft.md` ≥ 30; `grep -c "substantive\|3-8\|rewrite\|writing-plans" prompts/plan/tasks-draft.md` ≥ 3
 
-- [ ] 5.3 创建 reference 样本 `prompts/reference/specpower/example-design.md`
+- [x] 5.3 创建 reference 样本 `prompts/reference/specpower/example-design.md`
   - File: `prompts/reference/specpower/example-design.md` (新建)
   - 内容：从 `openspec/changes/archive/2026-04-26-create-specpower-plugin/design.md` 复制全文
   - 顶部加 HTML 注释：`<!-- Reference example from archived create-specpower-plugin change. Do not copy blindly; adapt structure and depth to current change. -->`
@@ -132,7 +132,7 @@
 
 ## 6. 重写 specpower-plan SKILL.md
 
-- [ ] 6.1 写 specpower-plan 的重写（已有文件，用 Edit 替换）
+- [x] 6.1 写 specpower-plan 的重写（已有文件，用 Edit 替换）
   - File: `skills/specpower-plan/SKILL.md`
   - 新 4 阶段结构：
     - Stage 1: `specpower change new <name>` (初始化 phase=plan)
@@ -143,13 +143,13 @@
     - Stage 6: Present 全部 4 artifacts + 说明 "first-iteration"；提示 `/specpower:refine`
   - Verify: `wc -l skills/specpower-plan/SKILL.md` ≤ 130; `grep -c "Stage [1-6]" skills/specpower-plan/SKILL.md` = 6; 所有 Read 路径指向 §5.1/5.2 创建的文件
 
-- [ ] 6.2 验证 SKILL.md 引用的文件都存在
+- [x] 6.2 验证 SKILL.md 引用的文件都存在
   - 用 grep 抽取 `.claude/specpower/prompts/plan/.*\.md` → 逐个确认文件存在
   - Verify: `for p in $(grep -oE '\.claude/specpower/prompts/plan/[a-z-]+\.md' skills/specpower-plan/SKILL.md | sort -u); do [ -f "${p#.claude/specpower/}" ] && echo "OK $p" || echo "MISSING $p"; done` 全部 OK（映射本地 prompts/）
 
 ## 7. 重写 refine prompt (真正整合 Superpowers 9 步 + 4 挑战行为)
 
-- [ ] 7.1 重写 `prompts/refine/brainstorm.md`（真整合 Superpowers 9 步）
+- [x] 7.1 重写 `prompts/refine/brainstorm.md`（真整合 Superpowers 9 步）
   - File: `prompts/refine/brainstorm.md`
   - 结构：
     - 开头 HARD GATE：No implementation until user confirms refined artifacts
@@ -176,7 +176,7 @@
   - Verify: `grep -c "challenge.*assumption\|propose.*alternative\|explore.*boundar\|question.*scope" prompts/refine/brainstorm.md` ≥ 4
   - Verify: `grep "at least 2 rounds\|minimum 2 rounds" prompts/refine/brainstorm.md` 匹配至少 1 行
 
-- [ ] 7.2 创建 `prompts/refine/update-artifacts.md`
+- [x] 7.2 创建 `prompts/refine/update-artifacts.md`
   - File: `prompts/refine/update-artifacts.md` (新建)
   - 内容：
     - 开头 HARD GATE：Every update must preserve format compatibility with specpower validate / archive
@@ -218,7 +218,7 @@
 
 ## 8. 重写 specpower-refine SKILL.md (多轮循环编排)
 
-- [ ] 8.1 重写 `skills/specpower-refine/SKILL.md`
+- [x] 8.1 重写 `skills/specpower-refine/SKILL.md`
   - File: `skills/specpower-refine/SKILL.md`
   - 结构：
     - 前置检查：`.specpower.yaml` phase === "plan"（否则提示错误）
@@ -244,7 +244,7 @@
 
 ## 9. 强化 build Phase A prompt
 
-- [ ] 9.1 重写 `prompts/build/phase-a-plan.md`（强化缺漏/重组流程）
+- [x] 9.1 重写 `prompts/build/phase-a-plan.md`（强化缺漏/重组流程）
   - File: `prompts/build/phase-a-plan.md`
   - 新增/强化 Section:
     - 开头明确："This prompt is for REWRITING an existing tasks.md into writing-plans precision. NOT generating from scratch."
@@ -292,7 +292,7 @@
 
 ## 10. 重写 specpower-build SKILL.md
 
-- [ ] 10.1 重写 `skills/specpower-build/SKILL.md`
+- [x] 10.1 重写 `skills/specpower-build/SKILL.md`
   - File: `skills/specpower-build/SKILL.md`
   - 新结构：
     - 前置检查：`.specpower.yaml` phase === "refined"，否则拒绝 + 建议 `/specpower:refine`
@@ -321,14 +321,14 @@
 
 ## 11. 同步更新其他 skill 里的 phase 过渡调用
 
-- [ ] 11.1 检查 specpower-done SKILL.md 是否需要更新
+- [x] 11.1 检查 specpower-done SKILL.md 是否需要更新
   - 已有 done SKILL.md：运行 `specpower change archive` CLI
   - archive CLI 现已加 phase 守门（§4.2）——因此 done SKILL.md 不需要显式改
   - 但要在 done SKILL.md 的前置条件中加一条说明：archive 要求 phase=built，如未到则先跑 `/specpower:build`
   - File: `skills/specpower-done/SKILL.md` (小改)
   - Verify: `grep "phase" skills/specpower-done/SKILL.md` 至少 1 行
 
-- [ ] 11.2 检查 specpower-fix SKILL.md 是否需要 phase 过渡
+- [x] 11.2 检查 specpower-fix SKILL.md 是否需要 phase 过渡
   - 当前 fix SKILL.md 内部调用 `specpower change new fix-<desc>` (会初始化 phase=plan) → 然后跳过 refine 直接调试 → 调 archive
   - archive 会因 phase=plan 而拒绝
   - 两种处理：
@@ -338,7 +338,7 @@
   - File: `skills/specpower-fix/SKILL.md` (修改 Stage 7)
   - Verify: `grep "change phase.*--set built\|phase=built" skills/specpower-fix/SKILL.md` 匹配
 
-- [ ] 11.3 snap SKILL.md 同理
+- [x] 11.3 snap SKILL.md 同理
   - snap 是事后补档，所有 artifact 直接生成完整态 → 应 phase=built
   - File: `skills/specpower-snap/SKILL.md`
   - 在调 archive 前加 `specpower change phase <name> --set built`
@@ -369,14 +369,14 @@
 
 ## 13. 端到端真实 session 测试
 
-- [ ] 13.1 创建新测试项目 notecli-v3
+- [x] 13.1 创建新测试项目 notecli-v3
   - Command: `mkdir -p /tmp/notecli-v3 && cd /tmp/notecli-v3`
   - 复用 `setup-notecli-v2` 同款脚手架（add/list CLI + 5 tests）
   - `git init && git add -A && git commit -m "initial"`
   - `specpower init`（本地 link 版，含新 prompts + SKILL.md）
   - Verify: `.claude/skills/specpower-*/SKILL.md` 10 个都存在且是新版；`.specpower.yaml` 不存在（还未 `change new`）；`.gitignore` 被追加
 
-- [ ] 13.2 R-T1: 真实 session 测试 /specpower:plan
+- [x] 13.2 R-T1: 真实 session 测试 /specpower:plan
   - Dispatch subagent (零上下文，在 notecli-v3 目录)
   - 用户请求："给 notecli 加搜索功能 /specpower:plan"
   - 期望：
@@ -388,7 +388,7 @@
   - Verify: `specpower validate specpower/changes/search-notes/specs/note-search/spec.md` exits 0
   - Verify: `specpower change phase search-notes` 输出 `plan`
 
-- [ ] 13.3 R-T2: 真实 session 测试 /specpower:refine (多轮)
+- [x] 13.3 R-T2: 真实 session 测试 /specpower:refine (多轮)
   - Dispatch subagent，零上下文，读 R-T1 产出的 4 artifact
   - 用户请求："/specpower:refine"
   - 期望：
@@ -401,7 +401,7 @@
   - Verify: `specpower change phase search-notes` 输出 `refined`
   - Verify: design.md Decisions 段落比 plan 产出更丰富（行数增长 ≥50%）
 
-- [ ] 13.4 R-T3: 真实 session 测试 /specpower:build (正常路径)
+- [x] 13.4 R-T3: 真实 session 测试 /specpower:build (正常路径)
   - Dispatch subagent 在 notecli-v3
   - 用户请求："/specpower:build"
   - 期望：
@@ -414,14 +414,14 @@
   - Verify: `grep -c "Verify:" tasks.md` ≥ task 数 * 0.8 (大多数 task 带 verify)
   - Verify: `specpower change phase search-notes` 输出 `built`
 
-- [ ] 13.5 R-T4: 真实 session 测试 /specpower:build 缺漏回 refine 路径
+- [x] 13.5 R-T4: 真实 session 测试 /specpower:build 缺漏回 refine 路径
   - 人工在 R-T2 后修改 design.md，删掉一个关键决策（模拟缺漏）
   - 再次运行 /specpower:build
   - 期望：Phase A 检测到 gap，STOP，不重写 tasks.md，给出明确 gap 报告
   - Verify: Phase A 输出含 "Cannot rewrite task" 和 "/specpower:refine"
   - Verify: tasks.md 保持原样（plan 阶段的粗任务版）
 
-- [ ] 13.6 R-T5: 真实 session 测试 /specpower:done (phase 守门)
+- [x] 13.6 R-T5: 真实 session 测试 /specpower:done (phase 守门)
   - 在 R-T3 完成后（phase=built）运行 /specpower:done → 成功归档
   - 另起一个 change：phase=plan 时试 done → 被 phase 守门拒绝
   - 加 --force 再试 → 成功但有 warning
@@ -430,7 +430,7 @@
 
 ## 14. 文档
 
-- [ ] 14.1 更新 README.md 的"核心流程"章节
+- [x] 14.1 更新 README.md 的"核心流程"章节
   - File: `README.md`
   - 改动：
     - 流程图加上"每阶段深度思考 → 多轮迭代精化"的描述
@@ -440,7 +440,7 @@
     - 加 `.specpower.yaml` phase 字段的简短说明
   - Verify: `grep -c "first-iteration\|multi-round\|phase" README.md` ≥ 3
 
-- [ ] 14.2 更新 CHANGELOG.md 加 0.2.0 section
+- [x] 14.2 更新 CHANGELOG.md 加 0.2.0 section
   - File: `CHANGELOG.md`
   - 新增：
     ```
@@ -466,11 +466,11 @@
 
 ## 15. 发版 0.2.0
 
-- [ ] 15.1 最终验证全量测试 + 打包
+- [x] 15.1 最终验证全量测试 + 打包
   - Command: `npm run build && npx vitest run && npm pack --dry-run`
   - Verify: build 成功；测试全过；tarball 含预期文件（含新 prompt 文件）
 
-- [ ] 15.2 升版本 + 推送
+- [x] 15.2 升版本 + 推送
   - Command: `npm version minor` (0.1.0 → 0.2.0，自动 commit + tag)
   - Command: `git push && git push --tags`
   - GitHub Actions 的 `release.yml` 自动触发：
@@ -482,7 +482,7 @@
   - Verify: `npm view specpower@0.2.0` 返回包信息
   - Verify: https://github.com/bstzyf/specpower/releases 最新 tag 是 v0.2.0
 
-- [ ] 15.3 归档本 change
+- [x] 15.3 归档本 change
   - Command: 等全部任务完成后，`openspec archive iterative-artifact-refinement --yes`
   - delta specs 合并到主 specs/plugin-infrastructure/, specs/specpower-plan/, specs/specpower-refine/, specs/specpower-build/
   - 归档目录：`openspec/changes/archive/YYYY-MM-DD-iterative-artifact-refinement/`
