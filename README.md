@@ -1,1 +1,406 @@
-# specPowner
+# SpecPower
+
+**一句话：scan 建基线，plan 想清楚，build 做到位，done 归档好。**
+
+SpecPower 把两个开源框架合并成一个工具：
+- **OpenSpec** — 结构化需求规划（proposal → specs → design → tasks）
+- **Superpowers** — 工程执行纪律（TDD、系统化调试、代码审查、subagent 编排）
+
+一个 CLI + 一套 Claude Code 技能，覆盖从「扫描代码库」到「归档上线」的完整开发生命周期。
+
+---
+
+## 前置依赖
+
+- **Node.js ≥ 20.19.0**（`node --version` 检查）
+- **Git**（用于 build 的 worktree 和 done 的分支管理）
+- **Claude Code**（斜杠命令入口）
+
+---
+
+## 安装
+
+### 方式 1：从 npm 全局安装（推荐，发布后可用）
+
+```bash
+npm install -g specpower
+```
+
+### 方式 2：从 GitHub 直接安装（发布前/最新代码）
+
+```bash
+npm install -g github:bstzyf/specpower
+```
+
+### 方式 3：本地源码安装（开发者 / 贡献者）
+
+```bash
+git clone https://github.com/bstzyf/specpower.git
+cd specpower
+npm install
+npm run build
+npm link
+```
+
+使用 `npm link` 后，在源码里改代码 → 重新 `npm run build` → 全局的 `specpower` 命令立即生效（符号链接）。
+
+### 方式 4：通过本地 tarball 分发
+
+在有源码的机器上打包：
+```bash
+npm run build
+npm pack          # 生成 specpower-3.0.0.tgz
+```
+在目标机器上安装：
+```bash
+npm install -g ./specpower-3.0.0.tgz
+```
+
+### 验证安装
+
+```bash
+specpower --version   # 应输出 3.0.0
+specpower --help
+```
+
+### 卸载
+
+```bash
+npm uninstall -g specpower
+# 如果用的是 npm link：
+npm unlink -g specpower
+```
+
+---
+
+## 在项目中使用
+
+### 初始化（每个项目一次）
+
+```bash
+cd your-project
+specpower init
+```
+
+这一步会：
+- 创建 `specpower/` 目录（存放 specs 和 changes）
+- 写入 `specpower/config.yaml`（项目上下文）
+- 在 `.claude/skills/specpower-*/` 生成 10 个技能文件
+- 在 `.claude/commands/specpower/` 生成 10 个斜杠命令别名
+- 在 `.claude/specpower/` 拷贝 prompts、schemas、templates
+- **自动追加** `.gitignore`，忽略可再生的 prompts/schemas/templates（幂等，不覆盖已有内容）
+
+init 后，打开 Claude Code 会话，斜杠命令 `/specpower:*` 立即可用。
+
+### 重新初始化
+
+```bash
+# 删掉后重新跑 init
+rm -rf specpower/config.yaml .claude/specpower/
+specpower init
+```
+
+（init 检测到已初始化会拒绝运行，避免误覆盖）
+
+---
+
+## 核心流程
+
+```
+/specpower:scan    扫描已有代码，生成 specs 基线
+       ↓
+/specpower:plan    描述你要做的功能，生成 proposal + delta specs
+       ↓
+/specpower:refine  技术方案探讨（brainstorming），输出 design.md
+       ↓
+/specpower:build   生成详细计划 → 逐任务 TDD 执行（subagent 模式）
+       ↓
+/specpower:review  代码审查（对照 specs 检查回归）
+       ↓
+/specpower:test    全量测试（单元 + 集成 + E2E + 回归）
+       ↓
+/specpower:verify  双重校验（delta specs 验收 + 主 specs 回归）
+       ↓
+/specpower:done    归档变更 → specs 合并 → git 分支清理
+```
+
+另外两个快捷命令：
+```
+/specpower:fix     修 Bug 一条龙（调试 → TDD 修复 → 自动归档）
+/specpower:snap    事后补档（从 git diff 反推变更记录）
+```
+
+---
+
+## 快速上手示例
+
+### 5 分钟跑通全流程
+
+```bash
+# 1. 安装（任选一种）
+npm install -g specpower
+
+# 2. 进入你的项目
+cd my-project
+
+# 3. 初始化
+specpower init
+
+# 4. 打开 Claude Code，在会话里输入：
+/specpower:plan "给用户管理模块加个批量导入功能"
+```
+
+Claude Code 接下来会：
+1. 读 `.claude/skills/specpower-plan/SKILL.md` 编排器
+2. 问你几个澄清问题（一次一个）
+3. 生成 `specpower/changes/bulk-import/proposal.md`
+4. 展示 proposal 等你**确认**
+5. 确认后生成 delta specs `specs/*/spec.md`
+6. 提示你下一步是 `/specpower:refine`
+
+### 更完整的示例（4 个场景）
+
+#### 场景 1：新项目从零开始
+
+```
+/specpower:plan "添加用户注册和登录功能"
+/specpower:refine           # 讨论技术方案，输出 design.md
+/specpower:build            # TDD 实现，每任务用户确认
+/specpower:review           # 代码审查
+/specpower:test             # 跑测试
+/specpower:verify           # 对照 specs 验收
+/specpower:done             # 归档 + merge
+```
+
+#### 场景 2：接手已有项目
+
+```bash
+cd legacy-project
+specpower init
+
+# 在 Claude Code 里：
+/specpower:scan             # 扫描现有代码，生成 specs 基线
+# 用户确认扫描结果后：
+/specpower:plan "新功能描述"   # 正常走 plan→done 流程
+```
+
+#### 场景 3：紧急修 Bug
+
+```
+/specpower:fix "登录接口在 token 过期时返回 500 而不是 401"
+```
+
+一条命令包含：
+1. 自动创建轻量变更
+2. 定位相关 specs（对照规格理解预期行为）
+3. 系统化调试（4 步法：调查 → 模式 → 假设 → 验证）
+4. TDD 修复（先写复现测试让它红，再修代码让它绿）
+5. 自动代码审查
+6. 跑测试
+7. 归档
+
+紧急模式跳过审查：
+```
+/specpower:fix --urgent "生产环境崩溃"
+```
+
+#### 场景 4：同事改了代码没走流程，事后补档
+
+```
+/specpower:snap "重构了认证模块"
+```
+
+分析 git diff + git log，反推完整变更记录，推断受影响的 specs，用户确认后自动归档。
+
+---
+
+## 命令速查
+
+### Claude Code 技能命令（在 Claude Code 会话里用）
+
+| 命令 | 说明 |
+|---|---|
+| `/specpower:scan` | 扫描已有代码库，生成 specs 基线 |
+| `/specpower:plan` | 需求规划：生成 proposal + delta specs |
+| `/specpower:refine` | 技术方案探讨（brainstorming + design.md） |
+| `/specpower:build` | 两阶段构建：生成计划 → subagent TDD 执行 |
+| `/specpower:review` | 代码审查（含 specs 回归检查） |
+| `/specpower:test` | 全量测试 + 验证（单元/集成/E2E/回归） |
+| `/specpower:verify` | 双重校验：delta specs 验收 + 主 specs 回归 |
+| `/specpower:done` | 归档变更 + specs 合并 + git 分支清理 |
+| `/specpower:fix` | 修 Bug 快速通道（调试 → TDD → 归档） |
+| `/specpower:snap` | 事后补档（从 git diff 反推变更记录） |
+
+### CLI 命令（在终端里用）
+
+| 命令 | 说明 |
+|---|---|
+| `specpower init` | 初始化项目（生成目录、技能、prompts） |
+| `specpower change new <名称>` | 创建新的变更 |
+| `specpower change status <名称>` | 查看变更的 artifact 完成状态 |
+| `specpower change archive <名称>` | 归档变更（delta merge + 移入 archive） |
+| `specpower validate <文件>` | 校验 spec 文件格式 |
+| `specpower instructions <artifact> <change>` | 查看某个 artifact 的创建指令 |
+
+CLI 命令会从当前目录**向上查找**项目根（找 `specpower/config.yaml`），类似 `git` 的行为。在项目任意子目录下运行都能工作。
+
+---
+
+## 架构
+
+SpecPower 分三层，各司其职：
+
+```
+┌─────────────────────────────────────────────────┐
+│  CLI 层（确定性逻辑）                              │
+│  TypeScript 实现。负责文件操作、specs 校验、        │
+│  artifact 状态追踪、delta merge、归档。            │
+│  不涉及任何 AI 逻辑。                             │
+├─────────────────────────────────────────────────┤
+│  SKILL.md 层（编排层）                             │
+│  每个命令一个 SKILL.md（50-100 行）。              │
+│  定义工作流阶段、hard gate 门禁、用户确认点。       │
+│  通过 Read 指令按需加载 prompt 文件。              │
+├─────────────────────────────────────────────────┤
+│  Prompts 层（执行指令）                            │
+│  详细的指令文件，告诉 Claude Code 在每个阶段        │
+│  具体怎么做：写 proposal、做 brainstorming、       │
+│  执行 TDD、做 code review 等。                    │
+│  按需加载，不会一次全部塞进 context。               │
+└─────────────────────────────────────────────────┘
+```
+
+**为什么这样设计？**
+
+- **渐进加载**：一个 SKILL.md 如果把所有 prompt 内嵌进去会超过 1000 行，Claude Code 容易"迷路"。拆成小文件按阶段加载，每个阶段的指令清晰聚焦。
+- **Hard Gate 双重保障**：关键门禁（如"设计未确认不许写代码"）在 SKILL.md 编排层和 prompt 文件两处都声明，防止执行漂移。
+- **CLI 处理确定性操作**：delta specs 合并、格式校验等需要精确文本操作的工作由 TypeScript 代码执行，不靠 AI 猜。
+
+---
+
+## 关键概念
+
+### Specs（规格文件）
+
+存放在 `specpower/specs/` 目录，是项目的 **Source of Truth（唯一事实来源）**。
+
+每个 spec 文件描述一个功能模块的行为规格：
+
+```markdown
+### Requirement: 用户登录
+系统应当支持通过邮箱和密码进行用户认证。
+
+#### Scenario: 登录成功
+- **WHEN** 用户提交有效凭据
+- **THEN** 系统返回认证 token
+
+#### Scenario: 登录失败
+- **WHEN** 用户提交错误密码
+- **THEN** 系统返回 401 错误
+```
+
+### Changes（变更记录）
+
+存放在 `specpower/changes/` 目录。每次新功能或修复都是一个 change。
+
+一个 change 包含：
+- `proposal.md` — 为什么做、做什么
+- `specs/` — delta specs（ADDED/MODIFIED/REMOVED/RENAMED 的需求变更）
+- `design.md` — 技术方案
+- `tasks.md` — 实施任务清单（带 checkbox）
+
+归档时，delta specs 会自动合并到主 specs，change 移入 `specpower/changes/archive/`。
+
+### Delta Specs（增量规格）
+
+描述对现有 specs 的变更，支持四种操作：
+
+```markdown
+## ADDED Requirements
+（新增的需求）
+
+## MODIFIED Requirements
+（修改的需求 — 必须包含完整更新内容）
+
+## REMOVED Requirements
+（删除的需求 — 必须说明原因和迁移方案）
+
+## RENAMED Requirements
+（重命名 — FROM: 旧名 / TO: 新名）
+```
+
+---
+
+## 项目产生的目录结构
+
+`specpower init` 后，你的项目会新增：
+
+```
+your-project/
+├── specpower/              # 需求管理（应该跟踪到 git）
+│   ├── config.yaml         # 项目上下文配置
+│   ├── specs/              # 主 specs（Source of Truth）
+│   ├── changes/            # 活跃的变更
+│   │   └── <name>/         # 每个变更的 artifact
+│   │       ├── proposal.md
+│   │       ├── specs/
+│   │       ├── design.md
+│   │       └── tasks.md
+│   └── changes/archive/    # 归档的变更
+│
+└── .claude/
+    ├── skills/specpower-*/ # 10 个技能（应该跟踪）
+    ├── commands/specpower/ # 10 个命令别名（应该跟踪）
+    └── specpower/          # 资源文件（.gitignore 自动忽略）
+        ├── prompts/
+        ├── schemas/
+        └── templates/
+```
+
+建议的 git 策略：
+- **跟踪**：`specpower/`、`.claude/skills/`、`.claude/commands/specpower/`（团队共享的规格和技能）
+- **忽略**：`.claude/specpower/{prompts,schemas,templates}/`（`specpower init` 自动忽略，因为这些可由升级 specpower 重新生成）
+
+---
+
+## 故障排查
+
+### `specpower: command not found`
+
+- 确认 `npm install -g` 成功
+- 检查 `npm config get prefix` 下的 `bin` 目录是否在 PATH 里
+
+### `No specpower project found at or above <dir>`
+
+CLI 找不到项目根。确保：
+- 你在一个跑过 `specpower init` 的项目目录里（或其子目录）
+- `specpower/config.yaml` 存在
+
+### `错误: Change "xxx" already exists`
+
+变更名冲突。要么用不同名字，要么先归档已有的。
+
+### Node 版本不兼容
+
+specPower 需要 Node ≥ 20.19.0。用 `nvm` 切版本：
+```bash
+nvm install 20
+nvm use 20
+npm install -g specpower
+```
+
+### code-review-graph 安装失败
+
+`/specpower:scan` 依赖 code-review-graph（在 optionalDependencies 里）。这个依赖是从 GitHub 安装的，如果网络问题导致失败，**不影响其他命令**——scan 之外的所有功能仍可用。
+
+---
+
+## 来源与许可
+
+SpecPower 基于两个开源项目构建（均为 MIT 许可）：
+- [OpenSpec](https://github.com/Fission-AI/OpenSpec) — artifact graph、delta merge、validation 等核心运行时
+- [Superpowers](https://github.com/obra/superpowers) — brainstorming、TDD、debugging、code review 等 prompt
+
+所有来源内容已按 specPower 风格改写，通过 `<!-- SOURCE: ... -->` 注释标注出处。
+
+**许可证：MIT**
