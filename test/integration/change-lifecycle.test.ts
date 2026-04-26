@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { createChange } from '../../src/cli/commands/change-new.js';
 import { getChangeStatus } from '../../src/cli/commands/change-status.js';
 import { archiveChangeCommand } from '../../src/cli/commands/change-archive.js';
+import { updatePhase } from '../../src/utils/change-utils.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -150,7 +151,8 @@ describe('Full change lifecycle', () => {
     // a change context. Verify the 4 change-level artifacts are all done.
     expect(changeArtifacts.every((a) => a.status === 'done')).toBe(true);
 
-    // 4. Archive the change
+    // 4. Transition to built, then archive (simulates real /specpower:build)
+    await updatePhase('test-feature', 'built', tmpDir);
     const archiveResult = await archiveChangeCommand('test-feature', tmpDir);
     expect(archiveResult.success).toBe(true);
 

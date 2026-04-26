@@ -64,10 +64,10 @@ async function setupDeltaMergeProject(): Promise<string> {
   const changeSpecsDir = join(changeDir, 'specs');
   await fs.mkdir(changeSpecsDir, { recursive: true });
 
-  // Metadata
+  // Metadata (phase=built so the phase gate permits archive)
   await fs.writeFile(
     join(changeDir, '.specpower.yaml'),
-    'schema: specpower\ncreated: "2026-04-25"\n',
+    'schema: specpower\ncreated: "2026-04-25"\nphase: built\n',
     'utf-8',
   );
 

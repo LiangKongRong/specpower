@@ -11,11 +11,23 @@ import { promises as fs } from 'node:fs';
 import { join, basename, relative } from 'node:path';
 import { validateSpec } from './validation/validator.js';
 import { applyDeltaSpec } from './specs-apply.js';
+import {
+  readChangeMetadata,
+  writeChangeMetadata,
+} from '../utils/change-metadata.js';
 
 export interface ArchiveResult {
   readonly success: boolean;
   readonly errors: readonly string[];
   readonly archivePath?: string;
+}
+
+export interface ArchiveOptions {
+  /**
+   * If true, archive even when the change is not in phase=built.
+   * A warning is emitted to stderr when force is applied.
+   */
+  readonly force?: boolean;
 }
 
 /**
@@ -65,24 +77,50 @@ function todayDatePrefix(): string {
  * Archive a completed change.
  *
  * Steps:
+ * 0. Validate phase gate: require phase=built unless options.force is true
  * 1. Find all delta spec files in `specpower/changes/<name>/specs/`
  * 2. Validate each delta spec
  * 3. For each delta spec, find the corresponding main spec in `specpower/specs/`
  * 4. Apply deltas to main specs
  * 5. Move the change directory to `specpower/changes/archive/<date>-<name>/`
- * 6. Return success/failure with details
+ * 6. Update archived .specpower.yaml with phase=archived
+ * 7. Return success/failure with details
  *
  * @param changeName - The name of the change to archive
  * @param projectRoot - Absolute path to the project root
+ * @param options - Optional archive options (e.g. force)
  * @returns An ArchiveResult with success flag, errors, and archive path
  */
 export async function archiveChange(
   changeName: string,
   projectRoot: string,
+  options: ArchiveOptions = {},
 ): Promise<ArchiveResult> {
   const changeDir = join(projectRoot, 'specpower', 'changes', changeName);
   const deltaSpecsDir = join(changeDir, 'specs');
   const mainSpecsDir = join(projectRoot, 'specpower', 'specs');
+
+  // 0. Phase gate: require phase=built unless --force
+  const metadata = await readChangeMetadata(changeDir);
+  const currentPhase = metadata?.phase;
+
+  if (currentPhase !== 'built' && !options.force) {
+    const phaseLabel = currentPhase ?? 'unknown';
+    return {
+      success: false,
+      errors: [
+        `Cannot archive: change "${changeName}" is in phase ${phaseLabel}, expected built. Run /specpower:build to finish implementation, or pass --force to override.`,
+      ],
+    };
+  }
+
+  if (options.force && currentPhase !== 'built') {
+    const phaseLabel = currentPhase ?? 'unknown';
+    console.warn(
+      `Warning: archiving "${changeName}" in phase ${phaseLabel} with --force. ` +
+        `Consider running /specpower:build first.`,
+    );
+  }
 
   // 1. Find delta spec files
   const deltaFiles = await listMarkdownFiles(deltaSpecsDir);
@@ -146,6 +184,12 @@ export async function archiveChange(
 
   await fs.mkdir(archiveDir, { recursive: true });
   await fs.rename(changeDir, archiveDest);
+
+  // 6. Update archived metadata to phase=archived (preserve other fields)
+  const archivedMeta = await readChangeMetadata(archiveDest);
+  if (archivedMeta !== null) {
+    await writeChangeMetadata(archiveDest, { ...archivedMeta, phase: 'archived' });
+  }
 
   return {
     success: true,

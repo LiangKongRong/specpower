@@ -9,8 +9,12 @@ import { archiveChangeCommand } from '../../src/cli/commands/change-archive.js';
  *   specpower/specs/auth.md (main spec)
  *   specpower/changes/my-change/specs/auth.md (valid delta spec)
  *   specpower/changes/my-change/.specpower.yaml
+ *
+ * @param phase - Phase to write into .specpower.yaml (default: "built")
  */
-async function createCompleteProject(): Promise<string> {
+async function createCompleteProject(
+  phase: string = 'built',
+): Promise<string> {
   const root = await fs.mkdtemp(join(tmpdir(), 'change-archive-test-'));
 
   const mainSpecDir = join(root, 'specpower', 'specs');
@@ -53,7 +57,7 @@ async function createCompleteProject(): Promise<string> {
   // Metadata
   await fs.writeFile(
     join(changeDir, '.specpower.yaml'),
-    'schema: specpower\ncreated: "2026-04-25"\n',
+    `schema: specpower\ncreated: "2026-04-25"\nphase: ${phase}\n`,
     'utf-8',
   );
 
@@ -130,5 +134,37 @@ describe('archiveChangeCommand', () => {
     await expect(
       archiveChangeCommand('non-existent', root),
     ).rejects.toThrow();
+  });
+
+  it('refuses to archive a change in phase=plan without --force', async () => {
+    const root = await createCompleteProject('plan');
+
+    await expect(
+      archiveChangeCommand('my-change', root),
+    ).rejects.toThrow(/Cannot archive.*phase plan.*expected built/);
+  });
+
+  it('refuses to archive a change in phase=refined without --force', async () => {
+    const root = await createCompleteProject('refined');
+
+    await expect(
+      archiveChangeCommand('my-change', root),
+    ).rejects.toThrow(/Cannot archive.*phase refined.*expected built/);
+  });
+
+  it('archives a change in phase=built without --force (default success path)', async () => {
+    const root = await createCompleteProject('built');
+
+    const result = await archiveChangeCommand('my-change', root);
+    expect(result.success).toBe(true);
+  });
+
+  it('archives a change in phase=plan when --force is passed', async () => {
+    const root = await createCompleteProject('plan');
+
+    const result = await archiveChangeCommand('my-change', root, {
+      force: true,
+    });
+    expect(result.success).toBe(true);
   });
 });

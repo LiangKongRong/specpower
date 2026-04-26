@@ -61,7 +61,7 @@ async function createTestProject(): Promise<string> {
   // .specpower.yaml
   await fs.writeFile(
     join(changeDir, '.specpower.yaml'),
-    'name: my-change\nstatus: verified\n',
+    'schema: specpower\ncreated: "2026-04-25"\nphase: built\n',
     'utf-8',
   );
 
@@ -161,5 +161,20 @@ describe('archiveChange', () => {
       .then(() => true)
       .catch(() => false);
     expect(archiveExists).toBe(false);
+  });
+
+  it('sets phase=archived in the archived change .specpower.yaml', async () => {
+    const root = await createTestProject();
+
+    const result = await archiveChange('my-change', root);
+    expect(result.success).toBe(true);
+
+    const archiveDir = join(root, 'specpower', 'changes', 'archive');
+    const entries = await fs.readdir(archiveDir);
+    expect(entries.length).toBe(1);
+
+    const metaPath = join(archiveDir, entries[0], '.specpower.yaml');
+    const content = await fs.readFile(metaPath, 'utf-8');
+    expect(content).toContain('phase: archived');
   });
 });
