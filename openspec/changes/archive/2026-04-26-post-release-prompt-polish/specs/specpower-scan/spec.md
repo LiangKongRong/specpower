@@ -1,8 +1,5 @@
-# specpower-scan Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change create-specpower-plugin. Update Purpose after archive.
-## Requirements
 ### Requirement: Brownfield project scanning via code-review-graph
 The `specpower:scan` capability is **DEFERRED to v0.3** and not functional in v0.2.x. When implemented in v0.3, the system SHALL scan an existing codebase using code-review-graph for analysis and convert the results into an OpenSpec specs baseline. In v0.2.x the SKILL MUST NOT attempt to run `specpower scan` (the CLI subcommand does not exist); it MUST advertise the planned status and redirect the user to the v0.2.x workable alternative.
 
@@ -40,6 +37,8 @@ Three outputs (`specpower/specs/`, `specpower/config.yaml`, `specpower/SCAN_REPO
 - **WHEN** a user running v0.2.x triggers `/specpower:scan`
 - **THEN** the SKILL SHALL produce zero files on disk — no `SCAN_REPORT.md`, no new `specpower/specs/` entries, no `specpower/config.yaml` modifications
 
+## ADDED Requirements
+
 ### Requirement: Planned-skill status advertisement
 The SKILL MUST make its PLANNED status discoverable before attempting any execution, and MUST give the user a workable v0.2.x path so the spec-driven flow is not blocked by the missing capability.
 
@@ -54,4 +53,3 @@ The SKILL MUST make its PLANNED status discoverable before attempting any execut
 #### Scenario: README documentation consistency
 - **WHEN** a user reads `README.md` after installing v0.2.x
 - **THEN** every mention of `/specpower:scan` in the README SHALL carry a `[规划中 · v0.3]` tag or equivalent explicit deferred-status marker, and `README.md` SHALL NOT contain any example workflow that instructs the user to invoke `/specpower:scan` as a live command
-
