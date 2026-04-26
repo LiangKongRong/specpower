@@ -202,6 +202,19 @@ git commit -m "feat: add specific feature"
 Verify: `git log -1 --oneline` shows the new commit
 ````
 
+## Portable `Verify:` commands
+
+A `Verify:` line is only useful if the command actually runs in the target environment and behaves the way the plan predicts. Some test-runner invocations look portable but silently change behavior across language/runtime versions — avoid those.
+
+Concrete rules:
+
+- **Prefer the project-declared script entry point** over ad-hoc runner invocations. If `package.json` / `pyproject.toml` / `Cargo.toml` / etc. defines a test script, use it (e.g. `npm test`, `pnpm test`, `pytest`, `cargo test`). That script is what the project's CI and the user's local environment actually run, so the `Verify:` line matches reality.
+- **If you must invoke the runner directly, spell out what it discovers.** For Node.js `node:test`, `node --test test/` discovers only files matching Node's default test-file name pattern (which is version-dependent) — `node --test 'test/*.test.js'` or `node --test $(ls test/*.test.js)` is explicit. For `pytest`, prefer `pytest path/to/test.py::test_name` over `pytest` alone when you want to verify a specific new test.
+- **If the project has no test script and no obvious runner, add a task to define one** before writing `Verify:` lines that depend on it.
+- **Include the expected outcome anchored on observable output** — exit code, a line in stdout/stderr, a file's existence. Don't write `Verify: passes`; write `Verify: exit 0, stdout contains "15 pass 0 fail"` or `Verify: file dist/cli.js exists`.
+
+The rule of thumb: if a fresh engineer cloned the repo, installed deps, and copy-pasted your `Verify:` line, would it reliably demonstrate the predicted outcome on their machine? If not, rewrite.
+
 ## No Placeholders (expanded)
 
 Every step must contain the actual content an engineer needs. These are **plan failures** — never write them:
@@ -212,6 +225,7 @@ Every step must contain the actual content an engineer needs. These are **plan f
 - Steps that describe what to do without showing how (code blocks required for code steps)
 - References to types, functions, or methods not defined in any task
 - Commands without a `Verify:` line
+- Test-runner invocations whose discovery behavior depends on the runtime version (see "Portable `Verify:` commands" above)
 
 ## Remember
 - Exact file paths always

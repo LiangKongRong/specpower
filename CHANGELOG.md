@@ -14,6 +14,15 @@
 
 _尚未发布的变更记录在此。发布时移到新的版本标题下。_
 
+## [0.2.1] - 2026-04-26
+
+Prompt 清晰度修补，端到端真实会话测试发现。NOT BREAKING，不改 CLI、不改 schema。
+
+### Fixed
+
+- `/specpower:build` Phase A 生成的 `Verify:` 行可能给出运行时版本敏感的命令（例如 `node --test test/` 在 Node.js 20 对目录自动发现行为不稳定）。`prompts/build/phase-a-plan.md` 新增 **Portable `Verify:` commands** 段，要求优先使用项目声明的 test script（`npm test`、`pytest`、`cargo test` 等），显式写出 runner 发现行为；同时在 No Placeholders 列表里明确禁止运行时版本敏感的 runner 调用
+- `/specpower:verify` Pass 2 regression 在 `specpower/specs/` 不存在时静默通过，无法区分"greenfield 无基线"和"brownfield 基线被误删"。`skills/specpower-verify/SKILL.md` 新增 **Baseline-aware execution** 指引，强制报告 `Pass 2: skipped (no baseline — greenfield project or no archived changes yet)`，并在 Stage 3 Report 规则里明确 `skipped` 必须原样呈现，不得折叠进 pass 小结
+
 ## [0.2.0] - 2026-04-26
 
 工作流深度迭代重构。plan 一次产出 4 artifact 的第一轮深度思考；refine 变为内部多轮攻击性审查（≥2 轮 + AI 语义收敛 + 4 个挑战行为 + Superpowers 9 步整合）；build Phase A 用 writing-plans 严格重写 tasks.md；新增 `.specpower.yaml` `phase` 字段追踪生命周期。NOT BREAKING。
