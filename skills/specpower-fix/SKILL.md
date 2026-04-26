@@ -59,6 +59,14 @@ A fix change MUST include at least one delta spec file under `specpower/changes/
 
 If the fix addresses a genuinely new scenario that existing specs did not cover, write a `## ADDED Requirements` delta with the new scenario.
 
+### Stage 7a: Mark Phase Built
+
+Before archive, invoke `specpower change phase fix-<desc> --set built` to mark the fix as built.
+
+Rationale: a fix change is created with `phase=plan` (same as any other change) but the fix flow covers the equivalent of the plan → refine → build pipeline end-to-end inside Stages 3–6 (debug → TDD → review → verify). Archive rejects non-`built` phases unless `--force` is passed, so setting the phase explicitly here keeps the guard meaningful without needing `--force`.
+
+### Stage 7b: Run Archive
+
 Then run `specpower change archive fix-<desc>` to finalize:
 - Delta merged into main specs
 - Change moved to `specpower/changes/archive/YYYY-MM-DD-fix-<desc>/`

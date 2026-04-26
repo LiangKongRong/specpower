@@ -37,6 +37,10 @@ Present the generated change documentation to the user.
 **Ask the user to confirm the inferred specs are accurate.**
 Do NOT archive until confirmed.
 
-## Stage 4: Archive
+## Stage 4: Mark Phase Built
 
-Once confirmed, run `specpower change archive` to merge the inferred specs into main specs.
+Before archive, invoke `specpower change phase <name> --set built` since snap produces a complete retroactive record equivalent to a built change. The CLI creates the snap change with `phase=plan`, but snap's entire flow (analyze → generate → infer → confirm) is post-hoc documentation of already-built work, so setting the phase explicitly satisfies the archive guard without needing `--force`.
+
+## Stage 5: Archive
+
+Once confirmed, run `specpower change archive <name>` to merge the inferred specs into main specs.

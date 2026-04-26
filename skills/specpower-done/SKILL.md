@@ -11,6 +11,7 @@ description: "Archive change + merge specs + git branch cleanup"
 
 - An active change must exist with completed implementation.
 - `specpower` CLI must be available on PATH.
+- **Phase must be `built`** in `.specpower.yaml`. This is set automatically when `/specpower:build` Phase B completes. `specpower change archive` refuses to archive changes whose phase is not `built` unless the caller passes `--force` explicitly. Do NOT pass `--force` from this skill — the flag is reserved for explicit user discretion. If archive fails with a phase check error, route the user back to `/specpower:build` to complete the missing phase transition rather than forcing past the guard.
 
 ## Stage 1: Test Gate
 
