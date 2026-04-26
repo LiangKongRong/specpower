@@ -13,6 +13,7 @@ import { getCompletedArtifacts } from '../../core/artifact-graph/state.js';
 import { formatStatus, formatStatusHuman } from '../../core/artifact-graph/outputs.js';
 import type { ArtifactStatusEntry, StatusOutput } from '../../core/artifact-graph/outputs.js';
 import { requireProjectRoot } from '../../utils/project-root.js';
+import { readChangeMetadata } from '../../utils/change-metadata.js';
 
 /**
  * Extended status output with change-level metadata.
@@ -59,6 +60,11 @@ export async function getChangeStatus(
   if (!fs.existsSync(changeDir)) {
     throw new Error(`Change "${changeName}" not found at ${changeDir}`);
   }
+
+  // Validate change metadata (including phase enum) before proceeding.
+  // If .specpower.yaml contains an invalid phase, Zod will throw a clear error
+  // listing the valid enum values. Missing metadata is tolerated (null return).
+  await readChangeMetadata(changeDir);
 
   const schemaName = readSchemaName(projectRoot);
 

@@ -109,7 +109,7 @@ export async function archiveChange(
     return {
       success: false,
       errors: [
-        `Cannot archive: change "${changeName}" is in phase ${phaseLabel}, expected built. Run /specpower:build to finish implementation, or pass --force to override.`,
+        `Cannot archive: change '${changeName}' is in phase '${phaseLabel}', expected 'built'. Complete '/specpower:build' first, or pass '--force' to archive anyway.`,
       ],
     };
   }

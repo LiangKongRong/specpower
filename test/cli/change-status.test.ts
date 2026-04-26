@@ -100,4 +100,24 @@ describe('getChangeStatus', () => {
       getChangeStatus('non-existent', tmpDir),
     ).rejects.toThrow();
   });
+
+  it('throws error when .specpower.yaml has an invalid phase value', async () => {
+    const changeDir = join(tmpDir, 'specpower', 'changes', 'test-change');
+    await fs.writeFile(
+      join(changeDir, '.specpower.yaml'),
+      'schema: specpower\ncreated: "2026-04-25"\nphase: invalid-value\n',
+      'utf-8',
+    );
+
+    const err = await getChangeStatus('test-change', tmpDir)
+      .then(() => null)
+      .catch((e: unknown) => e as Error);
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err!.message.toLowerCase()).toContain('phase');
+    // Error should mention at least one of the valid enum values
+    const mentionsValidValue =
+      /plan|refined|built|archived/.test(err!.message);
+    expect(mentionsValidValue).toBe(true);
+  });
 });

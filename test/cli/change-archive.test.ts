@@ -141,7 +141,9 @@ describe('archiveChangeCommand', () => {
 
     await expect(
       archiveChangeCommand('my-change', root),
-    ).rejects.toThrow(/Cannot archive.*phase plan.*expected built/);
+    ).rejects.toThrow(
+      /Cannot archive: change 'my-change' is in phase 'plan', expected 'built'\. Complete '\/specpower:build' first, or pass '--force' to archive anyway\./,
+    );
   });
 
   it('refuses to archive a change in phase=refined without --force', async () => {
@@ -149,7 +151,9 @@ describe('archiveChangeCommand', () => {
 
     await expect(
       archiveChangeCommand('my-change', root),
-    ).rejects.toThrow(/Cannot archive.*phase refined.*expected built/);
+    ).rejects.toThrow(
+      /Cannot archive: change 'my-change' is in phase 'refined', expected 'built'\. Complete '\/specpower:build' first, or pass '--force' to archive anyway\./,
+    );
   });
 
   it('archives a change in phase=built without --force (default success path)', async () => {
