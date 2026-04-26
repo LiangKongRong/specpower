@@ -46,6 +46,7 @@ export async function createChange(
   const metadata: ChangeMetadata = {
     schema: 'specpower',
     created: todayDate(),
+    phase: 'plan',
   };
 
   await writeChangeMetadata(name, metadata, projectRoot);

@@ -55,4 +55,18 @@ describe('createChange', () => {
       /[Ii]nvalid/,
     );
   });
+
+  it('initializes phase to "plan" in .specpower.yaml', async () => {
+    await createChange('my-feature', tmpDir);
+
+    const metaPath = join(
+      tmpDir,
+      'specpower',
+      'changes',
+      'my-feature',
+      '.specpower.yaml',
+    );
+    const content = await fs.readFile(metaPath, 'utf-8');
+    expect(content).toContain('phase: plan');
+  });
 });
