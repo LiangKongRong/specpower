@@ -21,8 +21,11 @@ export interface InitResult {
 
 /**
  * The 10 specpower commands, in canonical order.
+ *
+ * Exported so `specpower sync` can iterate the canonical set when refreshing
+ * skills/commands and pruning stale entries left by older versions.
  */
-const COMMAND_NAMES = [
+export const COMMAND_NAMES = [
   'scan',
   'plan',
   'refine',
@@ -67,8 +70,11 @@ const CONFIG_YAML = `schema: specpower
 /**
  * Resolves the package root by walking up from the current module until
  * a directory containing package.json is found.
+ *
+ * Exported so `specpower sync` can locate the installed package's skills,
+ * prompts, schemas, and templates regardless of cwd.
  */
-function findPackageRoot(): string {
+export function findPackageRoot(): string {
   const currentFile = fileURLToPath(import.meta.url);
   let dir = join(currentFile, '..');
   const root = '/';
@@ -110,8 +116,10 @@ async function isAlreadyInitialized(projectRoot: string): Promise<boolean> {
 /**
  * Recursively copies a directory from src to dest.
  * Creates dest and all intermediate directories as needed.
+ *
+ * Exported for reuse by `specpower sync`.
  */
-async function copyDirRecursive(src: string, dest: string): Promise<void> {
+export async function copyDirRecursive(src: string, dest: string): Promise<void> {
   await fs.mkdir(dest, { recursive: true });
 
   const entries = await fs.readdir(src, { withFileTypes: true });
@@ -133,8 +141,10 @@ async function copyDirRecursive(src: string, dest: string): Promise<void> {
 /**
  * Extracts the description from SKILL.md frontmatter.
  * Returns the default description if no frontmatter is found.
+ *
+ * Exported for reuse by `specpower sync`.
  */
-function extractSkillDescription(
+export function extractSkillDescription(
   content: string,
   commandName: CommandName,
 ): string {
@@ -151,8 +161,10 @@ function extractSkillDescription(
 
 /**
  * Generates a command alias markdown file.
+ *
+ * Exported for reuse by `specpower sync`.
  */
-function generateCommandAlias(
+export function generateCommandAlias(
   commandName: CommandName,
   description: string,
 ): string {
@@ -187,15 +199,48 @@ async function writeConfig(projectRoot: string): Promise<void> {
 }
 
 /**
- * Copies skill SKILL.md files and generates command aliases.
+ * Options for {@link copySkillsAndCommands}.
  */
-async function copySkillsAndCommands(
-  projectRoot: string,
+export interface CopySkillsAndCommandsOptions {
+  /**
+   * When set, rewrite relative prompt references inside each SKILL.md from
+   * `.claude/specpower/prompts/...` to an absolute path under this package
+   * root (`<packageRoot>/prompts/...`).
+   *
+   * Used by `specpower sync --user`: user-level skills live in `~/.claude`
+   * but the prompts they reference are resolved by Claude relative to the
+   * session cwd (the project), not the home dir. Pointing them straight at
+   * the installed package keeps a single source of truth that updates with
+   * `npm install -g specpower@latest`, and avoids copying prompts per-user.
+   */
+  readonly rewritePromptPaths?: string;
+}
+
+/**
+ * Rewrite the relative prompt path prefix inside a SKILL.md body to point at
+ * the installed package's `prompts/` directory. Backslashes are normalized to
+ * forward slashes so the path reads correctly on every platform.
+ */
+function rewritePromptPaths(content: string, packageRoot: string): string {
+  const pkg = packageRoot.replace(/\\/g, '/');
+  return content.replace(/\.claude\/specpower\/prompts\//g, `${pkg}/prompts/`);
+}
+
+/**
+ * Copies skill SKILL.md files and generates command aliases.
+ *
+ * @param claudeRoot - The `.claude` directory to write into (project or user)
+ * @param packageRoot - Absolute path to the specpower package root
+ * @param opts - Optional prompt-path rewrite for user-level installs
+ */
+export async function copySkillsAndCommands(
+  claudeRoot: string,
   packageRoot: string,
+  opts: CopySkillsAndCommandsOptions = {},
 ): Promise<void> {
   const skillsSourceDir = join(packageRoot, 'skills');
-  const skillsDestDir = join(projectRoot, '.claude', 'skills');
-  const commandsDestDir = join(projectRoot, '.claude', 'commands', 'specpower');
+  const skillsDestDir = join(claudeRoot, 'skills');
+  const commandsDestDir = join(claudeRoot, 'commands', 'specpower');
 
   await fs.mkdir(commandsDestDir, { recursive: true });
 
@@ -213,8 +258,11 @@ async function copySkillsAndCommands(
 
       try {
         const content = await fs.readFile(srcSkillMd, 'utf-8');
-        await fs.writeFile(join(destSkillDir, 'SKILL.md'), content, 'utf-8');
         description = extractSkillDescription(content, cmd);
+        const written = opts.rewritePromptPaths
+          ? rewritePromptPaths(content, opts.rewritePromptPaths)
+          : content;
+        await fs.writeFile(join(destSkillDir, 'SKILL.md'), written, 'utf-8');
       } catch {
         // SKILL.md not yet available; write a placeholder
         const placeholder = [
@@ -240,37 +288,46 @@ async function copySkillsAndCommands(
 
 /**
  * Copies prompts directory recursively.
+ *
+ * @param claudeRoot - The `.claude` directory to write into
+ * @param packageRoot - Absolute path to the specpower package root
  */
-async function copyPrompts(
-  projectRoot: string,
+export async function copyPrompts(
+  claudeRoot: string,
   packageRoot: string,
 ): Promise<void> {
   const src = join(packageRoot, 'prompts');
-  const dest = join(projectRoot, '.claude', 'specpower', 'prompts');
+  const dest = join(claudeRoot, 'specpower', 'prompts');
   await copyDirRecursive(src, dest);
 }
 
 /**
  * Copies schemas directory recursively.
+ *
+ * @param claudeRoot - The `.claude` directory to write into
+ * @param packageRoot - Absolute path to the specpower package root
  */
-async function copySchemas(
-  projectRoot: string,
+export async function copySchemas(
+  claudeRoot: string,
   packageRoot: string,
 ): Promise<void> {
   const src = join(packageRoot, 'schemas');
-  const dest = join(projectRoot, '.claude', 'specpower', 'schemas');
+  const dest = join(claudeRoot, 'specpower', 'schemas');
   await copyDirRecursive(src, dest);
 }
 
 /**
  * Copies templates directory recursively.
+ *
+ * @param claudeRoot - The `.claude` directory to write into
+ * @param packageRoot - Absolute path to the specpower package root
  */
-async function copyTemplates(
-  projectRoot: string,
+export async function copyTemplates(
+  claudeRoot: string,
   packageRoot: string,
 ): Promise<void> {
   const src = join(packageRoot, 'templates');
-  const dest = join(projectRoot, '.claude', 'specpower', 'templates');
+  const dest = join(claudeRoot, 'specpower', 'templates');
   await copyDirRecursive(src, dest);
 }
 
@@ -296,11 +353,13 @@ export async function initProject(
   await createDirectoryStructure(projectRoot);
   await writeConfig(projectRoot);
 
+  const claudeRoot = join(projectRoot, '.claude');
+
   await Promise.all([
-    copySkillsAndCommands(projectRoot, packageRoot),
-    copyPrompts(projectRoot, packageRoot),
-    copySchemas(projectRoot, packageRoot),
-    copyTemplates(projectRoot, packageRoot),
+    copySkillsAndCommands(claudeRoot, packageRoot),
+    copyPrompts(claudeRoot, packageRoot),
+    copySchemas(claudeRoot, packageRoot),
+    copyTemplates(claudeRoot, packageRoot),
   ]);
 
   await updateGitignore(projectRoot);
