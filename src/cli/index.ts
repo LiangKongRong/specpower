@@ -10,6 +10,7 @@ import { registerInstructionsCommand } from './commands/instructions.js';
 import { registerValidateCommand } from './commands/validate.js';
 import { registerInitCommand } from './commands/init.js';
 import { registerSyncCommand } from './commands/sync.js';
+import { registerConfigCommand } from './commands/config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -37,6 +38,7 @@ registerInstructionsCommand(program);
 registerValidateCommand(program);
 registerInitCommand(program);
 registerSyncCommand(program);
+registerConfigCommand(program);
 
 program.exitOverride();
 
