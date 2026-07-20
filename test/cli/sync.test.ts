@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { syncAssets } from '../../src/cli/commands/sync.js';
+import { initProject, readStoredVersion, readPackageVersion } from '../../src/cli/commands/init.js';
 
 const PACKAGE_ROOT = resolve(import.meta.dirname, '..', '..');
 const DIST_ENTRY = resolve(PACKAGE_ROOT, 'dist', 'cli', 'index.js');
@@ -129,6 +130,32 @@ describe('syncAssets (project scope, model C)', () => {
       join(tmpDir, '.claude', 'skills', 'my-own-skill', 'SKILL.md'),
     );
     expect(stat.isFile()).toBe(true);
+  });
+
+  it('stamps config.yaml forward to the installed version on project sync', async () => {
+    // init creates config.yaml with the current version
+    await initProject(tmpDir, PACKAGE_ROOT);
+
+    // simulate a project init'd by an older version
+    const configPath = join(tmpDir, 'specpower', 'config.yaml');
+    let content = await fs.readFile(configPath, 'utf-8');
+    content = content.replace(/^[ \t]*version:.*$\n?/m, 'version: 0.0.1\n');
+    await fs.writeFile(configPath, content, 'utf-8');
+    expect(readStoredVersion(tmpDir)).toBe('0.0.1');
+
+    await syncAssets({ projectRoot: tmpDir });
+
+    expect(readStoredVersion(tmpDir)).toBe(readPackageVersion(PACKAGE_ROOT));
+    // comments preserved through the surgical stamp
+    const after = await fs.readFile(configPath, 'utf-8');
+    expect(after).toContain('# Project context');
+  });
+
+  it('does not create config.yaml when the project has none (user-like)', async () => {
+    // a bare project that was never init'd: sync should refresh assets but not
+    // invent a config.yaml
+    await syncAssets({ projectRoot: tmpDir });
+    await expect(fs.stat(join(tmpDir, 'specpower', 'config.yaml'))).rejects.toThrow();
   });
 });
 

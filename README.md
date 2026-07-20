@@ -89,13 +89,34 @@ specpower init
 
 这一步会：
 - 创建 `specpower/` 目录（存放 specs 和 changes）
-- 写入 `specpower/config.yaml`（项目上下文）
+- 写入 `specpower/config.yaml`（项目上下文 + `version:` 记录初始化时的包版本）
 - 在 `.claude/skills/specpower-*/` 生成 10 个技能文件
 - 在 `.claude/commands/specpower/` 生成 10 个斜杠命令别名
 - 在 `.claude/specpower/` 拷贝 prompts、schemas、templates
 - **自动追加** `.gitignore`，忽略可再生的 prompts/schemas/templates（幂等，不覆盖已有内容）
 
 init 后，打开 Claude Code 会话，斜杠命令 `/specpower:*` 立即可用。
+
+### 重复 init 会按版本漂移提示 sync
+
+`init` 写入 `config.yaml` 时会盖一个 `version:` 戳（初始化时安装的包版本）。重复执行 `init` 时，它检测到项目已初始化后，会比较**当前安装的包版本**与 `config.yaml` 里记录的版本：
+
+| 安装包 vs 记录版本 | 行为 |
+|---|---|
+| 相等（`equal`） | 不做事，直接提示"已初始化" |
+| 更新（`newer`） | 提示「是否运行 sync 刷新 skills？」——TTY 下交互 `[y/N]`，非 TTY（CI/管道）自动**不阻塞**、只打印提示 |
+| 未记录（`unknown`，老版本 init 的项目无 `version:` 字段） | 同 newer，提示 sync 以补盖版本戳 |
+| 更旧（`older`，装了旧版包） | 仅警告，**不自动 sync**（向下同步会让 skills 回退），建议重装匹配版本 |
+
+确认 sync 后，init 会调用 `specpower sync`（项目级）刷新 `.claude/` 资产并把 `config.yaml` 的 `version:` **外科手术式更新**为当前版本（保留注释），于是下次 init 看到 `equal`、不再重复提示。
+
+非交互场景一键接受：
+
+```bash
+specpower init -y      # 已初始化且装了新版时，直接 sync，不问
+```
+
+> 注意：交互提示仅在 stdin 是 TTY 时出现；CI/脚本里要么用 `init -y`，要么单独跑 `specpower sync`。
 
 ### 重新初始化
 
@@ -116,7 +137,7 @@ npm install -g specpower@latest   # 更新全局包
 specpower sync                    # 把新 skills 刷进当前项目，再 commit
 ```
 
-`sync` 是**无守门**的强制刷新（不受"已初始化"拦截），会覆盖 `.claude/skills/specpower-*`、`.claude/commands/specpower/*`，并**清理已废弃**的旧技能目录/命令文件（被新版本删掉或改名的）。项目级（默认）还会一并刷新 `.claude/specpower/` 下的 prompts/schemas/templates。
+`sync` 是**无守门**的强制刷新（不受"已初始化"拦截），会覆盖 `.claude/skills/specpower-*`、`.claude/commands/specpower/*`，并**清理已废弃**的旧技能目录/命令文件（被新版本删掉或改名的）。项目级（默认）还会一并刷新 `.claude/specpower/` 下的 prompts/schemas/templates，并把 `config.yaml` 的 `version:` 戳更新为当前包版本（保留注释），使下次 `init` 看到 `equal`、不再提示 sync。
 
 #### 两种安装模型
 
