@@ -1,6 +1,6 @@
 {
   "name": "specpower",
-  "version": "0.2.3-0",
+  "version": "0.2.3-1",
   "type": "module",
   "description": "Unified spec-driven development for Claude Code: OpenSpec planning + Superpowers execution merged into one CLI + plugin",
   "keywords": [
@@ -46,6 +46,7 @@
     "clean": "rm -rf dist",
     "test": "vitest run",
     "test:watch": "vitest",
+    "postinstall": "node bin/postinstall-hint.js",
     "prepublishOnly": "npm run clean && npm run build && npm run test",
     "release:patch": "npm version patch && git push && git push --tags",
     "release:minor": "npm version minor && git push && git push --tags",

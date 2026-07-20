@@ -13,6 +13,8 @@ import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import type { Command } from 'commander';
 import { compareVersions } from '../../utils/version.js';
+import type { ToolAdapter, SkillMeta, TransformCtx } from '../../core/tools/types.js';
+import { resolveTool, maybeToolHint } from '../../core/tools/adapters.js';
 
 /**
  * How the installed package version relates to the version recorded in a
@@ -367,68 +369,58 @@ async function confirmSyncByDefault(drift: DriftInfo): Promise<boolean> {
  */
 export interface CopySkillsAndCommandsOptions {
   /**
-   * When set, rewrite relative prompt references inside each SKILL.md from
-   * `.claude/specpower/prompts/...` to an absolute path under this package
-   * root (`<packageRoot>/prompts/...`).
-   *
-   * Used by `specpower sync --user`: user-level skills live in `~/.claude`
-   * but the prompts they reference are resolved by Claude relative to the
-   * session cwd (the project), not the home dir. Pointing them straight at
-   * the installed package keeps a single source of truth that updates with
-   * `npm install -g specpower@latest`, and avoids copying prompts per-user.
+   * `project` (default): skill prompt references stay relative under the tool
+   * root (`<rootDir>/specpower/prompts/...`), resolved against the session cwd.
+   * `user`: references are rewritten to the installed package's absolute
+   * `prompts/` path, so prompts are sourced from the package (single source of
+   * truth, updates with `npm install -g`) and not copied per-user.
    */
-  readonly rewritePromptPaths?: string;
+  readonly scope?: 'project' | 'user';
 }
 
 /**
- * Rewrite the relative prompt path prefix inside a SKILL.md body to point at
- * the installed package's `prompts/` directory. Backslashes are normalized to
- * forward slashes so the path reads correctly on every platform.
- */
-function rewritePromptPaths(content: string, packageRoot: string): string {
-  const pkg = packageRoot.replace(/\\/g, '/');
-  return content.replace(/\.claude\/specpower\/prompts\//g, `${pkg}/prompts/`);
-}
-
-/**
- * Copies skill SKILL.md files and generates command aliases.
+ * Copies skill SKILL.md files and generates command aliases, emitting each
+ * skill through the given tool adapter so files land in that tool's layout
+ * (`.claude/skills/<dir>/SKILL.md`, `.opencode/agent/<dir>.md`, …).
  *
- * @param claudeRoot - The `.claude` directory to write into (project or user)
+ * @param tool - Target tool adapter (claude | opencode | cac)
+ * @param toolRoot - The tool's root directory to write into (e.g. `<project>/.claude`)
  * @param packageRoot - Absolute path to the specpower package root
- * @param opts - Optional prompt-path rewrite for user-level installs
+ * @param opts - scope (project vs user) controlling prompt-ref rewriting
  */
 export async function copySkillsAndCommands(
-  claudeRoot: string,
+  tool: ToolAdapter,
+  toolRoot: string,
   packageRoot: string,
   opts: CopySkillsAndCommandsOptions = {},
 ): Promise<void> {
+  const scope = opts.scope ?? 'project';
+  const ctx: TransformCtx = { scope, packageRoot };
   const skillsSourceDir = join(packageRoot, 'skills');
-  const skillsDestDir = join(claudeRoot, 'skills');
-  const commandsDestDir = join(claudeRoot, 'commands', 'specpower');
-
-  await fs.mkdir(commandsDestDir, { recursive: true });
 
   await Promise.all(
     COMMAND_NAMES.map(async (cmd) => {
       const skillDirName = `specpower-${cmd}`;
       const srcSkillDir = join(skillsSourceDir, skillDirName);
-      const destSkillDir = join(skillsDestDir, skillDirName);
       const srcSkillMd = join(srcSkillDir, 'SKILL.md');
-
-      // Copy SKILL.md if it exists, otherwise create a placeholder
-      await fs.mkdir(destSkillDir, { recursive: true });
+      const destSkillPath = join(toolRoot, tool.skillDestRelPath(skillDirName));
+      const destCommandPath = join(toolRoot, tool.commandDestRelPath(cmd));
 
       let description = DEFAULT_DESCRIPTIONS[cmd];
 
       try {
         const content = await fs.readFile(srcSkillMd, 'utf-8');
         description = extractSkillDescription(content, cmd);
-        const written = opts.rewritePromptPaths
-          ? rewritePromptPaths(content, opts.rewritePromptPaths)
-          : content;
-        await fs.writeFile(join(destSkillDir, 'SKILL.md'), written, 'utf-8');
+        const meta: SkillMeta = {
+          name: skillDirName,
+          description,
+          command: cmd,
+        };
+        const written = tool.transformSkill(content, meta, ctx);
+        await fs.mkdir(join(destSkillPath, '..'), { recursive: true });
+        await fs.writeFile(destSkillPath, written, 'utf-8');
       } catch {
-        // SKILL.md not yet available; write a placeholder
+        // SKILL.md not yet available; write a placeholder, also tool-transformed
         const placeholder = [
           '---',
           `name: ${skillDirName}`,
@@ -440,58 +432,67 @@ export async function copySkillsAndCommands(
           'Skill content pending.',
           '',
         ].join('\n');
-        await fs.writeFile(join(destSkillDir, 'SKILL.md'), placeholder, 'utf-8');
+        const meta: SkillMeta = {
+          name: skillDirName,
+          description: DEFAULT_DESCRIPTIONS[cmd],
+          command: cmd,
+        };
+        const written = tool.transformSkill(placeholder, meta, ctx);
+        await fs.mkdir(join(destSkillPath, '..'), { recursive: true });
+        await fs.writeFile(destSkillPath, written, 'utf-8');
       }
 
       // Generate command alias
       const aliasContent = generateCommandAlias(cmd, description);
-      await fs.writeFile(join(commandsDestDir, `${cmd}.md`), aliasContent, 'utf-8');
+      await fs.mkdir(join(destCommandPath, '..'), { recursive: true });
+      await fs.writeFile(destCommandPath, aliasContent, 'utf-8');
     }),
   );
 }
 
 /**
- * Copies prompts directory recursively.
+ * Copies prompts directory recursively under the tool root's `specpower/`
+ * subdir. Tool-agnostic: only the root dir differs across tools.
  *
- * @param claudeRoot - The `.claude` directory to write into
+ * @param toolRoot - The tool's root directory to write into (e.g. `<project>/.claude`)
  * @param packageRoot - Absolute path to the specpower package root
  */
 export async function copyPrompts(
-  claudeRoot: string,
+  toolRoot: string,
   packageRoot: string,
 ): Promise<void> {
   const src = join(packageRoot, 'prompts');
-  const dest = join(claudeRoot, 'specpower', 'prompts');
+  const dest = join(toolRoot, 'specpower', 'prompts');
   await copyDirRecursive(src, dest);
 }
 
 /**
- * Copies schemas directory recursively.
+ * Copies schemas directory recursively under the tool root's `specpower/` subdir.
  *
- * @param claudeRoot - The `.claude` directory to write into
+ * @param toolRoot - The tool's root directory to write into
  * @param packageRoot - Absolute path to the specpower package root
  */
 export async function copySchemas(
-  claudeRoot: string,
+  toolRoot: string,
   packageRoot: string,
 ): Promise<void> {
   const src = join(packageRoot, 'schemas');
-  const dest = join(claudeRoot, 'specpower', 'schemas');
+  const dest = join(toolRoot, 'specpower', 'schemas');
   await copyDirRecursive(src, dest);
 }
 
 /**
- * Copies templates directory recursively.
+ * Copies templates directory recursively under the tool root's `specpower/` subdir.
  *
- * @param claudeRoot - The `.claude` directory to write into
+ * @param toolRoot - The tool's root directory to write into
  * @param packageRoot - Absolute path to the specpower package root
  */
 export async function copyTemplates(
-  claudeRoot: string,
+  toolRoot: string,
   packageRoot: string,
 ): Promise<void> {
   const src = join(packageRoot, 'templates');
-  const dest = join(claudeRoot, 'specpower', 'templates');
+  const dest = join(toolRoot, 'specpower', 'templates');
   await copyDirRecursive(src, dest);
 }
 
@@ -520,20 +521,21 @@ export async function initProject(
   await createDirectoryStructure(projectRoot);
   await writeConfig(projectRoot, version);
 
-  const claudeRoot = join(projectRoot, '.claude');
+  const tool = await resolveTool(process.env.SPECPOWER_TOOL);
+  const toolRoot = join(projectRoot, tool.rootDir);
 
   await Promise.all([
-    copySkillsAndCommands(claudeRoot, packageRoot),
-    copyPrompts(claudeRoot, packageRoot),
-    copySchemas(claudeRoot, packageRoot),
-    copyTemplates(claudeRoot, packageRoot),
+    copySkillsAndCommands(tool, toolRoot, packageRoot),
+    copyPrompts(toolRoot, packageRoot),
+    copySchemas(toolRoot, packageRoot),
+    copyTemplates(toolRoot, packageRoot),
   ]);
 
-  await updateGitignore(projectRoot);
+  await updateGitignore(projectRoot, tool.rootDir);
 
   return {
     status: 'initialized',
-    message: `Initialized specpower project at ${projectRoot} (v${version})`,
+    message: `Initialized specpower project at ${projectRoot} (v${version}, tool: ${tool.id} -> ${tool.rootDir}/)`,
   };
 }
 
@@ -603,15 +605,29 @@ async function handleAlreadyInitialized(
  * - `.claude/specpower/prompts|schemas|templates/` are regeneratable via `specpower init`
  *   and pollute diffs when tracked. These get ignored.
  */
-async function updateGitignore(projectRoot: string): Promise<void> {
+/**
+ * Append specpower-generated paths to .gitignore if not already present.
+ *
+ * Rationale:
+ * - `<rootDir>/skills/` and `<rootDir>/commands/` (or `agent/`/`command/` for
+ *   opencode) should be tracked (shared across team).
+ * - `<rootDir>/specpower/prompts|schemas|templates/` are regeneratable via
+ *   `specpower init`/`sync` and pollute diffs when tracked. These get ignored.
+ *
+ * @param rootDir - The active tool's root dir name, e.g. `.claude` / `.opencode` / `.cac`.
+ */
+async function updateGitignore(
+  projectRoot: string,
+  rootDir: string,
+): Promise<void> {
   const gitignorePath = join(projectRoot, '.gitignore');
   const markerStart = '# Added by specpower init (regeneratable assets)';
   const markerEnd = '# End specpower init';
   const block = [
     markerStart,
-    '.claude/specpower/prompts/',
-    '.claude/specpower/schemas/',
-    '.claude/specpower/templates/',
+    `${rootDir}/specpower/prompts/`,
+    `${rootDir}/specpower/schemas/`,
+    `${rootDir}/specpower/templates/`,
     markerEnd,
     '',
   ].join('\n');
@@ -649,6 +665,7 @@ export function registerInitCommand(program: Command): void {
       'If already initialized and the installed version is newer, run sync without prompting',
     )
     .action(async (opts: { yes?: boolean }) => {
+      await maybeToolHint();
       const projectRoot = process.cwd();
       const packageRoot = findPackageRoot();
       const result = await initProject(projectRoot, packageRoot, {

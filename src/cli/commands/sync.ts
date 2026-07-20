@@ -37,12 +37,14 @@ import {
   readPackageVersion,
   stampVersionInConfig,
 } from './init.js';
+import type { ToolAdapter, ToolId } from '../../core/tools/types.js';
+import { resolveTool, maybeToolHint } from '../../core/tools/adapters.js';
 
 /**
  * Options for {@link syncAssets}.
  */
 export interface SyncOptions {
-  /** When true, sync into `~/.claude` (user-level, model B) instead of the cwd project. */
+  /** When true, sync into `~/.<rootDir>` (user-level, model B) instead of the cwd project. */
   readonly user?: boolean;
   /**
    * Override the project root for project-scope sync. Defaults to `process.cwd()`.
@@ -57,7 +59,9 @@ export interface SyncOptions {
 export interface SyncResult {
   readonly status: 'synced';
   readonly scope: 'project' | 'user';
-  /** The `.claude` directory that was refreshed. */
+  /** The target tool that was synced (claude | opencode | cac). */
+  readonly tool: ToolId;
+  /** The tool's root directory that was refreshed (e.g. `<project>/.claude`). */
   readonly target: string;
   /** Absolute path to the installed specpower package the assets came from. */
   readonly packageRoot: string;
@@ -85,34 +89,48 @@ function currentCommandFiles(): readonly string[] {
 }
 
 /**
- * Removes skill directories and command alias files that belong to specpower
+ * Removes skill files/dirs and command alias files that belong to specpower
  * but are no longer shipped by the current version (e.g. renamed or removed
  * skills across versions). Non-specpower entries are left untouched.
+ *
+ * Tool-aware: nested tools (claude/cac) prune `specpower-*` skill DIRS under
+ * `skills/`; flat tools (opencode) prune `specpower-*.md` skill FILES under
+ * `agent/`. The command scan dir also varies per tool.
  *
  * @returns Human-readable paths of everything removed.
  */
 async function cleanStale(
-  skillRoot: string,
-  commandRoot: string,
+  tool: ToolAdapter,
+  toolRoot: string,
 ): Promise<string[]> {
   const removed: string[] = [];
   const validSkills = new Set(currentSkillDirs());
   const validCommands = new Set(currentCommandFiles());
+  const skillScanDir = join(toolRoot, tool.skillsScanSubdir);
+  const commandScanDir = join(toolRoot, tool.commandsScanSubdir);
+  const flat = tool.skillLayout === 'flat';
 
   try {
-    const entries = await fs.readdir(skillRoot, { withFileTypes: true });
+    const entries = await fs.readdir(skillScanDir, { withFileTypes: true });
     await Promise.all(
       entries.map(async (entry) => {
-        if (
-          entry.isDirectory() &&
-          entry.name.startsWith(SPECPOWER_SKILL_PREFIX) &&
-          !validSkills.has(entry.name)
-        ) {
-          await fs.rm(join(skillRoot, entry.name), {
+        const matches =
+          flat
+            ? entry.isFile() &&
+              entry.name.startsWith(SPECPOWER_SKILL_PREFIX) &&
+              entry.name.endsWith('.md')
+            : entry.isDirectory() &&
+              entry.name.startsWith(SPECPOWER_SKILL_PREFIX);
+        if (!matches) {
+          return;
+        }
+        const canonical = flat ? entry.name.replace(/\.md$/, '') : entry.name;
+        if (!validSkills.has(canonical)) {
+          await fs.rm(join(skillScanDir, entry.name), {
             recursive: true,
             force: true,
           });
-          removed.push(`skills/${entry.name}`);
+          removed.push(`${tool.skillsScanSubdir}/${entry.name}`);
         }
       }),
     );
@@ -121,7 +139,7 @@ async function cleanStale(
   }
 
   try {
-    const entries = await fs.readdir(commandRoot, { withFileTypes: true });
+    const entries = await fs.readdir(commandScanDir, { withFileTypes: true });
     await Promise.all(
       entries.map(async (entry) => {
         if (
@@ -129,8 +147,8 @@ async function cleanStale(
           entry.name.endsWith('.md') &&
           !validCommands.has(entry.name)
         ) {
-          await fs.rm(join(commandRoot, entry.name), { force: true });
-          removed.push(`commands/specpower/${entry.name}`);
+          await fs.rm(join(commandScanDir, entry.name), { force: true });
+          removed.push(`${tool.commandsScanSubdir}/${entry.name}`);
         }
       }),
     );
@@ -142,10 +160,10 @@ async function cleanStale(
 }
 
 /**
- * Refreshes specpower assets from the installed package into a `.claude`
- * directory.
+ * Refreshes specpower assets from the installed package into the active
+ * tool's root directory (project or user scope).
  *
- * @param opts - Sync options (scope).
+ * @param opts - Sync options (scope, projectRoot override).
  * @returns SyncResult describing what was refreshed and pruned.
  */
 export async function syncAssets(
@@ -154,29 +172,26 @@ export async function syncAssets(
   const scope: 'project' | 'user' = opts.user ? 'user' : 'project';
   const packageRoot = findPackageRoot();
   const projectRoot = opts.projectRoot ?? process.cwd();
-  const claudeRoot =
+  const tool = await resolveTool(process.env.SPECPOWER_TOOL);
+  const toolRoot =
     scope === 'user'
-      ? join(homedir(), '.claude')
-      : join(projectRoot, '.claude');
-  const skillRoot = join(claudeRoot, 'skills');
-  const commandRoot = join(claudeRoot, 'commands', 'specpower');
+      ? join(homedir(), tool.rootDir)
+      : join(projectRoot, tool.rootDir);
 
-  const removed = await cleanStale(skillRoot, commandRoot);
+  const removed = await cleanStale(tool, toolRoot);
 
-  // Refresh skills + command aliases. User scope rewrites prompt paths to
-  // point at the installed package (see module docstring).
-  await copySkillsAndCommands(claudeRoot, packageRoot, {
-    rewritePromptPaths: scope === 'user' ? packageRoot : undefined,
-  });
+  // Refresh skills + command aliases, emitting through the tool adapter.
+  // User scope rewrites prompt refs to the installed package (per adapter).
+  await copySkillsAndCommands(tool, toolRoot, packageRoot, { scope });
 
-  const refreshed = [...currentSkillDirs(), 'commands/specpower'];
+  const refreshed = [...currentSkillDirs(), tool.commandsScanSubdir];
 
   if (scope === 'project') {
     // Project skills reference prompts/schemas/templates via relative paths
     // resolved against the project cwd, so copy them next to the skills.
-    await copyPrompts(claudeRoot, packageRoot);
-    await copySchemas(claudeRoot, packageRoot);
-    await copyTemplates(claudeRoot, packageRoot);
+    await copyPrompts(toolRoot, packageRoot);
+    await copySchemas(toolRoot, packageRoot);
+    await copyTemplates(toolRoot, packageRoot);
     refreshed.push('prompts', 'schemas', 'templates');
 
     // Stamp the installed version into config.yaml so a later `specpower init`
@@ -188,11 +203,12 @@ export async function syncAssets(
   return {
     status: 'synced',
     scope,
-    target: claudeRoot,
+    tool: tool.id,
+    target: toolRoot,
     packageRoot,
     refreshed,
     removed,
-    message: `Synced specpower assets (${scope}) to ${claudeRoot}.`,
+    message: `Synced specpower assets (${scope}, tool: ${tool.id}) to ${toolRoot}.`,
   };
 }
 
@@ -204,13 +220,14 @@ export function registerSyncCommand(program: Command): void {
     .command('sync')
     .description(
       'Refresh specpower skills/commands/assets from the installed package ' +
-        '(--user targets ~/.claude)',
+        '(--user targets ~/.<rootDir>; tool via `specpower config` or SPECPOWER_TOOL)',
     )
     .option(
       '--user',
-      'Sync to user-level ~/.claude instead of the current project',
+      'Sync to user-level ~/.<rootDir> instead of the current project',
     )
     .action(async (opts: SyncOptions) => {
+      await maybeToolHint();
       const result = await syncAssets(opts);
       console.info(result.message);
       if (result.removed.length > 0) {
