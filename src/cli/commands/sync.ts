@@ -34,6 +34,8 @@ import {
   copySchemas,
   copyTemplates,
   findPackageRoot,
+  readPackageVersion,
+  stampVersionInConfig,
 } from './init.js';
 
 /**
@@ -176,6 +178,11 @@ export async function syncAssets(
     await copySchemas(claudeRoot, packageRoot);
     await copyTemplates(claudeRoot, packageRoot);
     refreshed.push('prompts', 'schemas', 'templates');
+
+    // Stamp the installed version into config.yaml so a later `specpower init`
+    // sees `equal` instead of re-offering to sync the (now-current) assets.
+    // Surgical: only the `version:` line is touched, preserving comments.
+    await stampVersionInConfig(projectRoot, readPackageVersion(packageRoot));
   }
 
   return {
