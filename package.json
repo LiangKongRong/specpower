@@ -1,6 +1,6 @@
 {
   "name": "specpower",
-  "version": "0.2.3-1",
+  "version": "0.2.3-2",
   "type": "module",
   "description": "Unified spec-driven development for Claude Code: OpenSpec planning + Superpowers execution merged into one CLI + plugin",
   "keywords": [
@@ -57,9 +57,6 @@
     "commander": "^13.1.0",
     "js-yaml": "^4.1.0",
     "zod": "^3.24.4"
-  },
-  "optionalDependencies": {
-    "code-review-graph": "github:tirth8205/code-review-graph"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

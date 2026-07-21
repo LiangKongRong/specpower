@@ -107,15 +107,29 @@ describe('Package build verification', () => {
     expect(existsSync(schemaPath)).toBe(true);
   });
 
-  it('has code-review-graph as a dependency in package.json', () => {
+  it('does not declare slow github: git dependencies (install must not git-clone)', () => {
+    // code-review-graph was previously an optionalDependency on `github:...`,
+    // which made `npm install -g` clone a repo (and build its deps) on every
+    // fresh/CI install — minutes of stall on Windows. scan (the only consumer)
+    // is [PLANNED v0.3] and not functional, so the dep was removed; assert it
+    // stays out so installs stay fast.
     const pkg = JSON.parse(
       readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf-8'),
     );
     const allDeps = {
       ...pkg.dependencies,
       ...pkg.optionalDependencies,
+      ...pkg.peerDependencies,
     };
-    expect(allDeps).toHaveProperty('code-review-graph');
+    expect(allDeps).not.toHaveProperty('code-review-graph');
+    // no `github:` / `git+ssh` / `git+https` specifiers anywhere in deps —
+    // they all force a git clone at install time.
+    for (const [name, spec] of Object.entries(allDeps)) {
+      expect(typeof spec).toBe('string');
+      expect(String(spec)).not.toMatch(/^(github:|git\+)/);
+      // name is just here so a failure names the offending dep
+      expect(name).toBeTruthy();
+    }
   });
 
   it('has no stale superpowers references in execution prompts', () => {
