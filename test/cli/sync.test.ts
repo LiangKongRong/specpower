@@ -223,3 +223,63 @@ describe('syncAssets (user scope, model B)', () => {
     expect(skillDirs).toHaveLength(10);
   });
 });
+
+describe('syncAssets per tool (SPECPOWER_TOOL, project scope)', () => {
+  let tmpDir: string;
+  let savedEnv: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(join(tmpdir(), 'specpower-sync-tool-'));
+    savedEnv = process.env.SPECPOWER_TOOL;
+  });
+
+  afterEach(async () => {
+    if (savedEnv === undefined) delete process.env.SPECPOWER_TOOL;
+    else process.env.SPECPOWER_TOOL = savedEnv;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('opencode: syncs to .opencode/agent (flat), prunes stale flat agent file', async () => {
+    process.env.SPECPOWER_TOOL = 'opencode';
+    // seed a stale flat agent file from an older version
+    await fs.mkdir(join(tmpDir, '.opencode', 'agent'), { recursive: true });
+    await fs.writeFile(
+      join(tmpDir, '.opencode', 'agent', 'specpower-deprecated.md'),
+      'stale',
+      'utf-8',
+    );
+
+    const res = await syncAssets({ projectRoot: tmpDir });
+    expect(res.tool).toBe('opencode');
+    expect(res.target).toContain('.opencode');
+
+    await expect(
+      fs.stat(join(tmpDir, '.opencode', 'agent', 'specpower-plan.md')),
+    ).resolves.toBeDefined();
+    await expect(
+      fs.stat(join(tmpDir, '.opencode', 'command', 'plan.md')),
+    ).resolves.toBeDefined();
+    // prompts copied under .opencode/specpower
+    await expect(
+      fs.stat(join(tmpDir, '.opencode', 'specpower', 'prompts')),
+    ).resolves.toBeDefined();
+    // stale flat agent pruned
+    await expect(
+      fs.stat(join(tmpDir, '.opencode', 'agent', 'specpower-deprecated.md')),
+    ).rejects.toThrow();
+    expect(res.removed).toContain('agent/specpower-deprecated.md');
+    // no .claude
+    await expect(fs.stat(join(tmpDir, '.claude'))).rejects.toThrow();
+  });
+
+  it('cac: syncs to .cac/skills/<dir>/SKILL.md', async () => {
+    process.env.SPECPOWER_TOOL = 'cac';
+    const res = await syncAssets({ projectRoot: tmpDir });
+    expect(res.tool).toBe('cac');
+    const skill = await fs.readFile(
+      join(tmpDir, '.cac', 'skills', 'specpower-plan', 'SKILL.md'),
+      'utf-8',
+    );
+    expect(skill).toContain('.cac/specpower/prompts/');
+  });
+});

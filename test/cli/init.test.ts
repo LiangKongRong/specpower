@@ -389,3 +389,80 @@ describe('stampVersionInConfig', () => {
     await expect(stampVersionInConfig(tmpDir, '0.2.3-0')).resolves.toBeUndefined();
   });
 });
+
+describe('initProject per-tool output (SPECPOWER_TOOL)', () => {
+  let tmpDir: string;
+  let savedEnv: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(join(tmpdir(), 'specpower-tool-init-'));
+    savedEnv = process.env.SPECPOWER_TOOL;
+  });
+
+  afterEach(async () => {
+    if (savedEnv === undefined) delete process.env.SPECPOWER_TOOL;
+    else process.env.SPECPOWER_TOOL = savedEnv;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('opencode: emits .opencode/agent/*.md + .opencode/command/*.md + assets, no .claude/', async () => {
+    process.env.SPECPOWER_TOOL = 'opencode';
+    const res = await initProject(tmpDir, PACKAGE_ROOT);
+    expect(res.message).toContain('tool: opencode');
+
+    // flat agent file (not skills/<dir>/SKILL.md)
+    const agentPath = join(tmpDir, '.opencode', 'agent', 'specpower-plan.md');
+    const stat = await fs.stat(agentPath);
+    expect(stat.isFile()).toBe(true);
+
+    // command alias under command/ (not commands/specpower/)
+    await expect(
+      fs.stat(join(tmpDir, '.opencode', 'command', 'plan.md')),
+    ).resolves.toBeDefined();
+
+    // prompts/schemas/templates under .opencode/specpower/
+    await expect(
+      fs.stat(join(tmpDir, '.opencode', 'specpower', 'prompts')),
+    ).resolves.toBeDefined();
+
+    // agent frontmatter is opencode's
+    const agent = await fs.readFile(agentPath, 'utf-8');
+    expect(agent).toContain('mode: primary');
+    expect(agent).toContain('tools:');
+    // prompt ref rewritten to .opencode
+    expect(agent).toContain('.opencode/specpower/prompts/');
+
+    // no .claude was created
+    await expect(fs.stat(join(tmpDir, '.claude'))).rejects.toThrow();
+
+    // .gitignore block targets .opencode (not .claude)
+    const gi = await fs.readFile(join(tmpDir, '.gitignore'), 'utf-8');
+    expect(gi).toContain('.opencode/specpower/prompts/');
+    expect(gi).not.toContain('.claude/specpower/');
+  });
+
+  it('cac: emits .cac/skills/<dir>/SKILL.md with .cac/ prompt refs', async () => {
+    process.env.SPECPOWER_TOOL = 'cac';
+    await initProject(tmpDir, PACKAGE_ROOT);
+
+    const skill = await fs.readFile(
+      join(tmpDir, '.cac', 'skills', 'specpower-plan', 'SKILL.md'),
+      'utf-8',
+    );
+    expect(skill).toContain('.cac/specpower/prompts/');
+    expect(skill).not.toContain('.claude/specpower/prompts/');
+    await expect(
+      fs.stat(join(tmpDir, '.cac', 'commands', 'specpower', 'plan.md')),
+    ).resolves.toBeDefined();
+  });
+
+  it('default (no env): unchanged .claude/ layout', async () => {
+    delete process.env.SPECPOWER_TOOL;
+    await initProject(tmpDir, PACKAGE_ROOT);
+    await expect(
+      fs.stat(join(tmpDir, '.claude', 'skills', 'specpower-plan', 'SKILL.md')),
+    ).resolves.toBeDefined();
+    await expect(fs.stat(join(tmpDir, '.opencode'))).rejects.toThrow();
+    await expect(fs.stat(join(tmpDir, '.cac'))).rejects.toThrow();
+  });
+});
