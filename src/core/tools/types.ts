@@ -15,7 +15,7 @@
 /**
  * Supported target tool ids. `claude` is the default and matches prior behavior.
  */
-export type ToolId = 'claude' | 'opencode' | 'cac';
+export type ToolId = 'claude' | 'opencode' | 'cac' | 'chrys';
 
 /**
  * Metadata about a source skill, derived from its SKILL.md frontmatter.

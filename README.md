@@ -96,10 +96,11 @@ specpower config list                 # 列出支持的工具并标出当前生�
 | `claude`（默认） | `.claude/` | `skills/<dir>/SKILL.md` + `commands/specpower/<cmd>.md` | 稳定 |
 | `opencode` | `.opencode/` | `agent/<dir>.md`（扁平 + 合成 frontmatter）+ `command/<cmd>.md` | 实验性 |
 | `cac` | `.cac/` | 同 claude 布局，根目录换 `.cac/` | 实验性 |
+| `chrys` | `.agents/` | 同 claude 布局，根目录换 `.agents/` | 实验性 |
 
 工具选择持久化在 `~/.specpower/config.json`；也可用 `SPECPOWER_TOOL=opencode` 环境变量临时覆盖（主要用于 CI/测试）。一次只生成一种工具；切换工具重跑 `specpower sync` 即可刷新。
 
-> ⚠️ opencode/cac 是 best-effort：开发环境无法抓取它们的官方文档，frontmatter 字段（`mode`/`tools`）与 cac 的加载器按已知约定实现。适配器层把每个工具的格式隔离开，修正只需改一个文件。请用真实的 opencode/cac 跑一次 init 后确认格式匹配。
+> ⚠️ opencode/cac/chrys 是 best-effort：开发环境无法抓取它们的官方文档，frontmatter 字段（`mode`/`tools`）与 cac/chrys 的加载器按已知约定实现。适配器层把每个工具的格式隔离开，修正只需改一个文件。请用真实的工具跑一次 init 后确认格式匹配。
 
 ### 初始化（每个项目一次）
 
@@ -111,8 +112,8 @@ specpower init
 这一步会：
 - 创建 `specpower/` 目录（存放 specs 和 changes）
 - 写入 `specpower/config.yaml`（项目上下文 + `version:` 记录初始化时的包版本）
-- 按当前工具生成 10 个技能文件（`.claude/skills/specpower-*/SKILL.md` / `.opencode/agent/*.md` / `.cac/skills/...`）
-- 生成 10 个斜杠命令别名（`.claude/commands/specpower/` / `.opencode/command/` / `.cac/commands/specpower/`）
+- 按当前工具生成 10 个技能文件（`.claude/skills/specpower-*/SKILL.md` / `.opencode/agent/*.md` / `.cac/skills/...` / `.agents/skills/...`）
+- 生成 10 个斜杠命令别名（`.claude/commands/specpower/` / `.opencode/command/` / `.cac/commands/specpower/` / `.agents/commands/specpower/`）
 - 在 `<rootDir>/specpower/` 拷贝 prompts、schemas、templates
 - **自动追加** `.gitignore`，忽略该工具根下可再生的 prompts/schemas/templates（幂等，不覆盖已有内容）
 
