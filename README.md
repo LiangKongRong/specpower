@@ -85,7 +85,7 @@ npm unlink -g specpower
 默认 skills 输出到 `.claude/`（Claude Code）。换用别的 AI 工具时，安装后跑一次 `specpower config` 选定目标工具，之后 `init`/`sync` 都按该工具的目录与格式生成：
 
 ```bash
-specpower config set tool opencode   # 或 cac；默认 claude
+specpower config set tool opencode   # 或 cac / chrys；默认 claude
 specpower config list                 # 列出支持的工具并标出当前生效的
 ```
 
@@ -98,7 +98,7 @@ specpower config list                 # 列出支持的工具并标出当前生�
 | `cac` | `.cac/` | 同 claude 布局，根目录换 `.cac/` | 实验性 |
 | `chrys` | `.agents/` | 同 claude 布局，根目录换 `.agents/` | 实验性 |
 
-工具选择持久化在 `~/.specpower/config.json`；也可用 `SPECPOWER_TOOL=opencode` 环境变量临时覆盖（主要用于 CI/测试）。一次只生成一种工具；切换工具重跑 `specpower sync` 即可刷新。
+工具选择持久化在 `~/.specpower/config.json`；也可用 `SPECPOWER_TOOL=opencode`（或 `cac`/`chrys`）环境变量临时覆盖（主要用于 CI/测试）。一次只生成一种工具；切换工具重跑 `specpower sync` 即可刷新。
 
 > ⚠️ opencode/cac/chrys 是 best-effort：开发环境无法抓取它们的官方文档，frontmatter 字段（`mode`/`tools`）与 cac/chrys 的加载器按已知约定实现。适配器层把每个工具的格式隔离开，修正只需改一个文件。请用真实的工具跑一次 init 后确认格式匹配。
 
