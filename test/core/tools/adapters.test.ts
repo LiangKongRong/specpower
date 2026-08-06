@@ -41,10 +41,15 @@ const userCtx = (packageRoot = PKG): TransformCtx => ({
 });
 
 describe('adapter registry', () => {
-  it('lists claude, opencode, cac and claude is the default', () => {
+  it('lists claude, opencode, cac, chrys and claude is the default', () => {
     const ids = allAdapters().map((a) => a.id);
-    expect(ids).toEqual(['claude', 'opencode', 'cac']);
-    expect(TOOL_LISTINGS.map((t) => t.id)).toEqual(['claude', 'opencode', 'cac']);
+    expect(ids).toEqual(['claude', 'opencode', 'cac', 'chrys']);
+    expect(TOOL_LISTINGS.map((t) => t.id)).toEqual([
+      'claude',
+      'opencode',
+      'cac',
+      'chrys',
+    ]);
     expect(isToolId('claude')).toBe(true);
     expect(isToolId('nope')).toBe(false);
   });
@@ -53,9 +58,11 @@ describe('adapter registry', () => {
     expect(getToolAdapter('claude').rootDir).toBe('.claude');
     expect(getToolAdapter('cac').rootDir).toBe('.cac');
     expect(getToolAdapter('opencode').rootDir).toBe('.opencode');
+    expect(getToolAdapter('chrys').rootDir).toBe('.agents');
     expect(getToolAdapter('opencode').skillLayout).toBe('flat');
     expect(getToolAdapter('claude').skillLayout).toBe('nested');
     expect(getToolAdapter('cac').skillLayout).toBe('nested');
+    expect(getToolAdapter('chrys').skillLayout).toBe('nested');
   });
 
   it('skillDestRelPath matches each tool layout', () => {
@@ -67,6 +74,9 @@ describe('adapter registry', () => {
     );
     expect(getToolAdapter('opencode').skillDestRelPath('specpower-plan')).toBe(
       'agent/specpower-plan.md',
+    );
+    expect(getToolAdapter('chrys').skillDestRelPath('specpower-plan')).toBe(
+      'skills/specpower-plan/SKILL.md',
     );
   });
 
@@ -100,6 +110,18 @@ describe('transformSkill', () => {
     expect(out).toContain('name: specpower-plan');
   });
 
+  it('chrys project rewrites prompt root .claude/ -> .agents/', () => {
+    const out = getToolAdapter('chrys').transformSkill(
+      PLAN_SKILL,
+      meta('plan'),
+      projectCtx(),
+    );
+    expect(out).toContain('.agents/specpower/prompts/plan/proposal.md');
+    expect(out).not.toContain('.claude/specpower/prompts/');
+    // passthrough frontmatter
+    expect(out).toContain('name: specpower-plan');
+  });
+
   it('opencode project synthesizes agent frontmatter + rewrites refs', () => {
     const out = getToolAdapter('opencode').transformSkill(
       PLAN_SKILL,
@@ -120,7 +142,7 @@ describe('transformSkill', () => {
   });
 
   it('all tools: user scope rewrites refs to the installed package (forward-slash)', () => {
-    for (const id of ['claude', 'opencode', 'cac'] as const) {
+    for (const id of ['claude', 'opencode', 'cac', 'chrys'] as const) {
       const out = getToolAdapter(id).transformSkill(
         PLAN_SKILL,
         meta('plan'),

@@ -282,4 +282,15 @@ describe('syncAssets per tool (SPECPOWER_TOOL, project scope)', () => {
     );
     expect(skill).toContain('.cac/specpower/prompts/');
   });
+
+  it('chrys: syncs to .agents/skills/<dir>/SKILL.md', async () => {
+    process.env.SPECPOWER_TOOL = 'chrys';
+    const res = await syncAssets({ projectRoot: tmpDir });
+    expect(res.tool).toBe('chrys');
+    const skill = await fs.readFile(
+      join(tmpDir, '.agents', 'skills', 'specpower-plan', 'SKILL.md'),
+      'utf-8',
+    );
+    expect(skill).toContain('.agents/specpower/prompts/');
+  });
 });

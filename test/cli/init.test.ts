@@ -456,6 +456,26 @@ describe('initProject per-tool output (SPECPOWER_TOOL)', () => {
     ).resolves.toBeDefined();
   });
 
+  it('chrys: emits .agents/skills/<dir>/SKILL.md with .agents/ prompt refs', async () => {
+    process.env.SPECPOWER_TOOL = 'chrys';
+    await initProject(tmpDir, PACKAGE_ROOT);
+
+    const skill = await fs.readFile(
+      join(tmpDir, '.agents', 'skills', 'specpower-plan', 'SKILL.md'),
+      'utf-8',
+    );
+    expect(skill).toContain('.agents/specpower/prompts/');
+    expect(skill).not.toContain('.claude/specpower/prompts/');
+    await expect(
+      fs.stat(join(tmpDir, '.agents', 'commands', 'specpower', 'plan.md')),
+    ).resolves.toBeDefined();
+    // no .claude created
+    await expect(fs.stat(join(tmpDir, '.claude'))).rejects.toThrow();
+    // .gitignore targets .agents
+    const gi = await fs.readFile(join(tmpDir, '.gitignore'), 'utf-8');
+    expect(gi).toContain('.agents/specpower/prompts/');
+  });
+
   it('default (no env): unchanged .claude/ layout', async () => {
     delete process.env.SPECPOWER_TOOL;
     await initProject(tmpDir, PACKAGE_ROOT);

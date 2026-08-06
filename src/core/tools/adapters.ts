@@ -137,8 +137,35 @@ const opencodeAdapter: ToolAdapter = {
   },
 };
 
+/**
+ * `chrys` adapter — same layout as claude/cac, rooted at `.agents/`. Passthrough
+ * frontmatter; prompt refs rewritten `.claude/` → `.agents/` (project) or the
+ * installed package (user).
+ */
+const chrysAdapter: ToolAdapter = {
+  id: 'chrys',
+  rootDir: '.agents',
+  skillLayout: 'nested',
+  skillsScanSubdir: 'skills',
+  commandsScanSubdir: 'commands/specpower',
+  skillDestRelPath: (skillDir) => `skills/${skillDir}/SKILL.md`,
+  commandDestRelPath: (cmd) => `commands/specpower/${cmd}.md`,
+  transformSkill: (src, _meta, ctx) => {
+    const target =
+      ctx.scope === 'user'
+        ? `${forward(ctx.packageRoot)}/prompts/`
+        : '.agents/specpower/prompts/';
+    return rewritePromptRefs(src, target);
+  },
+};
+
 /** All adapters in canonical order (claude first as the default). */
-const ADAPTERS: readonly ToolAdapter[] = [claudeAdapter, opencodeAdapter, cacAdapter];
+const ADAPTERS: readonly ToolAdapter[] = [
+  claudeAdapter,
+  opencodeAdapter,
+  cacAdapter,
+  chrysAdapter,
+];
 
 const ADAPTER_BY_ID: Readonly<Record<ToolId, ToolAdapter>> = Object.fromEntries(
   ADAPTERS.map((a) => [a.id, a]),
@@ -149,6 +176,7 @@ export const TOOL_LISTINGS: readonly ToolListing[] = [
   { id: 'claude', name: 'Claude Code (.claude)', experimental: false },
   { id: 'opencode', name: 'OpenCode (.opencode)', experimental: true },
   { id: 'cac', name: 'CAC (.cac)', experimental: true },
+  { id: 'chrys', name: 'Chrys (.agents)', experimental: true },
 ];
 
 /** True when `id` is a supported tool id. */
