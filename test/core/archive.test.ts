@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { archiveChange } from '../../src/core/archive.js';
+import { parseTestPlan } from '../../src/core/parsers/test-plan-parser.js';
 
 /**
  * Create a minimal project structure for archive tests.
@@ -193,8 +194,8 @@ describe('archiveChange', () => {
       '### Requirement: Two Factor Auth → Scenario: Enable 2FA',
       '',
       '- **Case** T1: user enables 2FA [negative]',
-      '  - 输入: enable2FA()',
-      '  - 预期: requires OTP',
+      '  - Input: enable2FA()',
+      '  - Expected: requires OTP',
       "  - it(): throws on unknown [my-change-T1]",
     ].join('\n');
     await fs.writeFile(join(changeDir, 'test-plan.md'), testPlanContent, 'utf-8');
@@ -221,5 +222,13 @@ describe('archiveChange', () => {
     expect(baselineSpec).not.toContain('TP_UNMERGED_MARKER');
     expect(baselineSpec).not.toContain('test-plan');
     expect(baselineSpec).not.toContain('[my-change-T1]');
+
+    // 3. The archived test-plan must use the English field names the parser
+    //    recognizes (Input/Expected) — Chinese 输入/预期 would be silently
+    //    dropped, producing empty input/expected on the parsed Case.
+    const parsed = parseTestPlan(movedContent);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].input).toBe('enable2FA()');
+    expect(parsed[0].expected).toBe('requires OTP');
   });
 });

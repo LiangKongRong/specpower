@@ -141,7 +141,7 @@ execution precision.
 - Existing `id:` values MUST NOT be renumbered or reused; assign the next unused `T<n>`
   to new Cases.
 - Each Case must have a scenarioRef (delta or baseline), a `[positive]`/`[negative]` mark,
-  and 输入/预期/`it()`.
+  and Input/Expected/`it()`.
 - After edits, run `specpower validate <spec>` to confirm coverage (every delta Scenario
   ≥1 Case; required negatives present; no dangling/orphan/duplicate).
 
