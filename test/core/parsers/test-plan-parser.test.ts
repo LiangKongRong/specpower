@@ -15,7 +15,7 @@ const DOC = `# test-plan: demo
 `;
 
 describe('parseTestPlan', () => {
-  it('parses a well-formed case with all fields', () => {
+  it('parses a well-formed case with all fields [add-test-plan-artifact-T2]', () => {
     const cases = parseTestPlan(DOC);
     expect(cases).toHaveLength(1);
     expect(cases[0]).toEqual({
@@ -71,7 +71,7 @@ describe('findMalformedCases', () => {
     expect(findMalformedCases(doc)).toEqual([]);
   });
 
-  it('flags a Case whose id lacks the T<n> prefix (e.g. X1)', () => {
+  it('flags a Case whose id lacks the T<n> prefix (e.g. X1) [add-test-plan-artifact-T3]', () => {
     const doc = `## Capability: c
 
 - **Case** X1: bad id [positive]

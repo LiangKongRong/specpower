@@ -48,7 +48,7 @@ describe('renameScenario', () => {
     return { active, archived };
   }
 
-  it('syncs test-plan references across active + archived changes', async () => {
+  it('syncs test-plan references across active + archived changes [add-test-plan-artifact-T12]', async () => {
     const { active, archived } = await buildSyncFixture(root);
     await renameScenario(root, 'cap', 'old name', 'new name');
     const synced = await syncTestPlanRefs(root, 'old name', 'new name');
@@ -61,7 +61,7 @@ describe('renameScenario', () => {
     expect(archivedAfter).not.toContain('→ Scenario: old name');
   });
 
-  it('--dry-run lists affected files without writing', async () => {
+  it('--dry-run lists affected files without writing [add-test-plan-artifact-T13]', async () => {
     const { active, archived } = await buildSyncFixture(root);
     const affected = await listAffectedTestPlans(root, 'old name');
     expect(affected).toHaveLength(2);

@@ -8,21 +8,21 @@ const mk = (o: Partial<TestCase>): TestCase => ({
 });
 
 describe('checkCoverage', () => {
-  it('passes when every delta scenario has a case and negatives present', () => {
+  it('passes when every delta scenario has a case and negatives present [add-test-plan-artifact-T8]', () => {
     const r = checkCoverage({
       deltaScenarios: [{ requirement: 'r', scenario: 's' }],
       cases: [mk({ scenarioRef: 's', mark: 'negative' })],
     });
     expect(r.issues).toEqual([]);
   });
-  it('flags uncovered scenario', () => {
+  it('flags uncovered scenario [add-test-plan-artifact-T9]', () => {
     const r = checkCoverage({
       deltaScenarios: [{ requirement: 'r', scenario: 's' }],
       cases: [],
     });
     expect(r.issues.some((i) => i.issue === 'uncovered-scenario')).toBe(true);
   });
-  it('flags missing-negative for failure-admitting requirement', () => {
+  it('flags missing-negative for failure-admitting requirement [add-test-plan-artifact-T10]', () => {
     const r = checkCoverage({
       deltaScenarios: [{ requirement: 'r', scenario: 's' }],
       cases: [mk({ scenarioRef: 's', mark: 'positive' })],
@@ -37,7 +37,7 @@ describe('checkCoverage', () => {
     });
     expect(r.issues.some((i) => i.issue === 'duplicate-id')).toBe(true);
   });
-  it('flags dangling ref (scenario not in delta or baseline)', () => {
+  it('flags dangling ref (scenario not in delta or baseline) [add-test-plan-artifact-T7]', () => {
     const r = checkCoverage({
       deltaScenarios: [{ requirement: 'r', scenario: 's' }],
       cases: [mk({ scenarioRef: 'nope', mark: 'negative' })],

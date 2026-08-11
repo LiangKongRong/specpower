@@ -78,25 +78,25 @@ describe('validate test-plan integration', () => {
     'spec.md',
   );
 
-  it('passes (valid) when a change has a covering test-plan.md', async () => {
+  it('passes (valid) when a change has a covering test-plan.md [add-test-plan-artifact-T15]', async () => {
     const res = await validateSpecFile(withPlanSpec);
     expect(res.valid).toBe(true);
     expect(res.errors).toEqual([]);
   });
 
-  it('warns (not errors) when a testable change lacks test-plan.md', async () => {
+  it('warns (not errors) when a testable change lacks test-plan.md [add-test-plan-artifact-T1]', async () => {
     const res = await validateSpecFile(withoutPlanSpec);
     expect(res.valid).toBe(true);
     expect(res.warnings.some((w) => /test-plan/i.test(w.message))).toBe(true);
   });
 
-  it('promotes the missing test-plan warning to an error under --strict', async () => {
+  it('promotes the missing test-plan warning to an error under --strict [add-test-plan-artifact-T17]', async () => {
     const res = await validateSpecFile(withoutPlanSpec, { strict: true });
     expect(res.valid).toBe(false);
     expect(res.errors.some((e) => /test-plan/i.test(e.message))).toBe(true);
   });
 
-  it('does not flag baseline-regression refs as dangling when baseline specs exist', async () => {
+  it('does not flag baseline-regression refs as dangling when baseline specs exist [add-test-plan-artifact-T6]', async () => {
     const root = await fs.mkdtemp(join(tmpdir(), 'validate-baseline-'));
     // baseline spec
     const baselineDir = join(root, 'specpower', 'specs');
@@ -210,7 +210,7 @@ describe('validate test-plan integration', () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it('reports malformed-id Case lines in test-plan.md instead of silently dropping them', async () => {
+  it('reports malformed-id Case lines in test-plan.md instead of silently dropping them [add-test-plan-artifact-T16]', async () => {
     const root = await fs.mkdtemp(join(tmpdir(), 'validate-malformed-'));
     const changeDir = join(root, 'specpower', 'changes', 'c3');
     const deltaSpecsDir = join(changeDir, 'specs');

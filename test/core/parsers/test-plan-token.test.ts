@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { caseToken, TOKEN_RE, findTokens } from '../../../src/core/parsers/test-plan-token.js';
 
 describe('test-plan-token', () => {
-  it('builds a change-prefixed token from change name + id', () => {
+  it('builds a change-prefixed token from change name + id [add-test-plan-artifact-T4]', () => {
     expect(caseToken('add-test-plan-artifact', 'T3')).toBe('[add-test-plan-artifact-T3]');
   });
   it('TOKEN_RE matches and captures change + id', () => {

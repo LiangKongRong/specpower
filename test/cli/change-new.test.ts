@@ -43,7 +43,7 @@ describe('createChange', () => {
     expect(content).toContain(`created: '${today}'`);
   });
 
-  it('throws error when change name already exists', async () => {
+  it('throws error when change name already exists [add-test-plan-artifact-T5]', async () => {
     await createChange('my-feature', tmpDir);
 
     await expect(createChange('my-feature', tmpDir)).rejects.toThrow(

@@ -197,7 +197,7 @@ describe('archiveChange', () => {
     expect(content).toContain('phase: archived');
   });
 
-  it('blocks archive of a testable change (has scenario) lacking test-plan.md', async () => {
+  it('blocks archive of a testable change (has scenario) lacking test-plan.md [add-test-plan-artifact-T14]', async () => {
     const root = await createTestProject();
     // remove the test-plan.md so the change is testable (has scenarios) but
     // lacks the required test-plan artifact
@@ -223,7 +223,7 @@ describe('archiveChange', () => {
     expect(result.success).toBe(true);
   });
 
-  it('moves test-plan.md into archive and does NOT merge it into baseline', async () => {
+  it('moves test-plan.md into archive and does NOT merge it into baseline [add-test-plan-artifact-T11]', async () => {
     const root = await createTestProject();
 
     // Add a test-plan.md alongside the delta spec in the change directory.
