@@ -439,7 +439,8 @@ your-project/
 │   │       ├── proposal.md
 │   │       ├── specs/
 │   │       ├── design.md
-│   │       └── tasks.md
+│   │       ├── tasks.md
+│   │       └── test-plan.md  # 自然语言测试用例（代码前先写；引用 spec scenario、带 [change-id] token）
 │   └── changes/archive/    # 归档的变更
 │
 └── .claude/
