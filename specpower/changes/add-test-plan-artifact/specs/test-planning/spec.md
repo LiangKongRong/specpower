@@ -96,6 +96,10 @@ Every Scenario in the change's delta specs shall have at least one Case in `test
 - **WHEN** a baseline Scenario is renamed and an archived test-plan references the old name
 - **THEN** `rename-scenario` syncs that archived test-plan's reference; absent sync, the reference shall not silently fail (rejecting a bare edit of the baseline spec name outside `rename-scenario`)
 
+#### Scenario: rename-scenario rejects a non-existent scenario (reject)
+- **WHEN** `specpower rename-scenario` targets a Scenario name that does not exist in the baseline spec
+- **THEN** the operation fails with an error naming the missing Scenario and writes nothing
+
 #### Scenario: build Phase B consumes Cases via id-embedded it()
 - **WHEN** `specpower build` Phase B runs TDD on a change containing `test-plan.md`
 - **THEN** each Case drives an `it()` test whose name embeds the **globally-unique change-prefixed token** (e.g. `it('throws on unknown [add-test-plan-artifact-T3]', …)`), named by the Case's planned name; a `[negative]` Case produces a test reproducing a contract violation
