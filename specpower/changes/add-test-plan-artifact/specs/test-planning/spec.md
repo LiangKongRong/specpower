@@ -106,7 +106,7 @@ Every Scenario in the change's delta specs shall have at least one Case in `test
 
 #### Scenario: verify runs two-step coverage check
 - **WHEN** `specpower verify` runs on a built change
-- **THEN** Step1 scans the test suite for every Case's **prefix token** (`<changeName>-Tn`); if missing it fails (fail) and names the Case (no omission, no cross-change false report); Step2 locates that Case's test by prefix token and AST-checks the **minimal-checkable items** — the `it()` exists, is parseable, calls the function under test, and touches the Case's input; it does not judge semantic equivalence; when the minimal items cannot be satisfied it reports a warning with the gap (staged; v1 best-effort)
+- **THEN** Step1 scans the test suite for every Case's **prefix token** (`<changeName>-Tn`); if missing it fails (fail) and names the Case (no omission, no cross-change false report); Step2 reads each located `it()`'s code and verifies its semantics match the Case's definition — the test calls the function under test with the Case's `Input` and asserts the Case's `Expected` outcome; a mismatch (the test asserts a different outcome than the plan) fails (fail); when the correspondence genuinely cannot be determined it reports a warning
 
 #### Scenario: archiving a testable change without test-plan is blocked
 - **WHEN** `specpower done` is asked to archive a change that has a (delta) Scenario but lacks `test-plan.md`
