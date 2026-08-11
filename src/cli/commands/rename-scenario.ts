@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import type { Command } from 'commander';
+import * as readline from 'node:readline/promises';
 
 export async function renameScenario(
   projectRoot: string,
@@ -23,18 +24,48 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Decide whether a destructive rename should prompt for confirmation before
+ * writing. Prompts only when stdin is a TTY (interactive) and `--yes` was not
+ * passed. Non-TTY (pipes, CI, tests) never blocks.
+ */
+export function shouldPromptForConfirmation(
+  opts: { yes?: boolean },
+  isTTY: boolean | undefined,
+): boolean {
+  return !opts.yes && !!isTTY;
+}
+
 export function registerRenameScenarioCommand(program: Command): void {
   program
     .command('rename-scenario <capability> <old> <new>')
     .description('Atomically rename a baseline Scenario and sync test-plan references')
     .option('--dry-run', 'Preview affected files without writing')
-    .action(async (capability: string, old: string, next: string, opts: { dryRun?: boolean }) => {
+    .option('--yes', 'Skip the interactive confirmation prompt (non-TTY always skips)')
+    .action(async (capability: string, old: string, next: string, opts: { dryRun?: boolean; yes?: boolean }) => {
       const projectRoot = process.cwd();
       if (opts.dryRun) {
         const affected = await listAffectedTestPlans(projectRoot, old);
         console.info(`Would rename "${old}" → "${next}" in baseline spec + ${affected.length} test-plan(s):`);
         affected.forEach((p) => console.info(`  ${p}`));
         return;
+      }
+      // Confirmation gate: prompt only in an interactive (TTY) session and
+      // only when --yes was not passed. Non-TTY runs proceed without blocking.
+      const affected = await listAffectedTestPlans(projectRoot, old);
+      if (shouldPromptForConfirmation(opts, process.stdin.isTTY)) {
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        try {
+          const ans = await rl.question(
+            `Rename "${old}" → "${next}" in baseline spec + ${affected.length} test-plan(s). Proceed? [y/N] `,
+          );
+          if (!/^\s*y(es)?\s*$/i.test(ans)) {
+            console.info('Aborted.');
+            return;
+          }
+        } finally {
+          rl.close();
+        }
       }
       await renameScenario(projectRoot, capability, old, next);
       const synced = await syncTestPlanRefs(projectRoot, old, next);

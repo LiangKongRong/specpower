@@ -2,10 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { Command } from 'commander';
 import {
   renameScenario,
   listAffectedTestPlans,
   syncTestPlanRefs,
+  registerRenameScenarioCommand,
+  shouldPromptForConfirmation,
 } from '../../src/cli/commands/rename-scenario.js';
 
 describe('renameScenario', () => {
@@ -106,5 +109,50 @@ describe('renameScenario', () => {
     const occurrences = (after.match(/→ Scenario: new name/g) ?? []).length;
     expect(occurrences).toBe(2);
     expect(after).not.toContain('→ Scenario: old name');
+  });
+});
+
+describe('rename-scenario confirmation gate', () => {
+  let root: string;
+  let cwd: string;
+  beforeEach(async () => {
+    root = await fs.mkdtemp(join(tmpdir(), 'rs-gate-'));
+    cwd = process.cwd();
+    const specDir = join(root, 'specpower', 'specs', 'cap');
+    await fs.mkdir(specDir, { recursive: true });
+    await fs.writeFile(join(specDir, 'spec.md'),
+      `### Requirement: r\n...\n#### Scenario: old name\n- **WHEN** x\n- **THEN** y\n`, 'utf-8');
+  });
+  afterEach(async () => {
+    process.chdir(cwd);
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('shouldPromptForConfirmation: true only for TTY without --yes', () => {
+    expect(shouldPromptForConfirmation({ yes: false }, true)).toBe(true);
+    expect(shouldPromptForConfirmation({ yes: true }, true)).toBe(false);
+    expect(shouldPromptForConfirmation({ yes: false }, undefined)).toBe(false);
+    expect(shouldPromptForConfirmation({ yes: true }, undefined)).toBe(false);
+  });
+
+  it('non-TTY does not block: executes without --yes (behavior unchanged)', async () => {
+    process.chdir(root);
+    const program = new Command();
+    registerRenameScenarioCommand(program);
+    await program.parseAsync(['rename-scenario', 'cap', 'old name', 'new name'], { from: 'user' });
+
+    const after = await fs.readFile(join(root, 'specpower', 'specs', 'cap', 'spec.md'), 'utf-8');
+    expect(after).toContain('#### Scenario: new name');
+    expect(after).not.toContain('#### Scenario: old name');
+  });
+
+  it('--yes skips confirmation and executes (even if isTTY were true)', async () => {
+    process.chdir(root);
+    const program = new Command();
+    registerRenameScenarioCommand(program);
+    await program.parseAsync(['rename-scenario', 'cap', 'old name', 'new name', '--yes'], { from: 'user' });
+
+    const after = await fs.readFile(join(root, 'specpower', 'specs', 'cap', 'spec.md'), 'utf-8');
+    expect(after).toContain('#### Scenario: new name');
   });
 });
