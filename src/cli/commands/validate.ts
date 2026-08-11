@@ -21,7 +21,7 @@ import {
   REQUIREMENT_HEADER,
 } from '../../core/validation/constants.js';
 import type { ValidationError, ValidationResult, ValidationWarning } from '../../core/validation/types.js';
-import { parseTestPlanFile } from '../../core/parsers/test-plan-parser.js';
+import { parseTestPlanFile, findMalformedCases } from '../../core/parsers/test-plan-parser.js';
 import { checkCoverage } from '../../core/validation/test-plan-coverage.js';
 
 /**
@@ -135,6 +135,13 @@ async function checkTestPlan(
       message: `test-plan.md missing for change ${changeName} (run plan Stage 5b; --strict to enforce)`,
     });
     return { errors, warnings };
+  }
+
+  const testPlanContent = await fs.readFile(testPlanPath, 'utf-8');
+  for (const m of findMalformedCases(testPlanContent)) {
+    errors.push({
+      message: `Case line ${m.line} has malformed/missing id (expected T<n>): ${m.raw}`,
+    });
   }
 
   const cases = await parseTestPlanFile(testPlanPath);

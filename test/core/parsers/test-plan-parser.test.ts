@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseTestPlan } from '../../../src/core/parsers/test-plan-parser.js';
+import { parseTestPlan, findMalformedCases } from '../../../src/core/parsers/test-plan-parser.js';
 
 const DOC = `# test-plan: demo
 
@@ -56,6 +56,60 @@ const DUP = `## Capability: c
   - Expected: b
   - it(): n2
 `;
+
+describe('findMalformedCases', () => {
+  it('returns empty for well-formed T<n> ids', () => {
+    const doc = `## Capability: c
+
+### Requirement: r → Scenario: s
+
+- **Case** T1: ok [positive]
+  - Input: a
+  - Expected: b
+  - it(): n
+`;
+    expect(findMalformedCases(doc)).toEqual([]);
+  });
+
+  it('flags a Case whose id lacks the T<n> prefix (e.g. X1)', () => {
+    const doc = `## Capability: c
+
+- **Case** X1: bad id [positive]
+  - Input: a
+  - Expected: b
+  - it(): n
+`;
+    const hit = findMalformedCases(doc);
+    expect(hit).toHaveLength(1);
+    expect(hit[0].line).toBe(3);
+    expect(hit[0].raw).toContain('X1');
+  });
+
+  it('flags a Case with no id before the colon', () => {
+    const doc = `- **Case** : no id [positive]
+`;
+    const hit = findMalformedCases(doc);
+    expect(hit).toHaveLength(1);
+    expect(hit[0].line).toBe(1);
+  });
+
+  it('does not flag non-Case lines', () => {
+    const doc = `some text
+- not a case line
+### Requirement: r → Scenario: s
+`;
+    expect(findMalformedCases(doc)).toEqual([]);
+  });
+
+  it('reports 1-based line numbers across multiple matches', () => {
+    const doc = `- **Case** X1: a [positive]
+- **Case** T1: ok [positive]
+- **Case** Z9: b [positive]
+`;
+    const hit = findMalformedCases(doc);
+    expect(hit.map((h) => h.line)).toEqual([1, 3]);
+  });
+});
 
 describe('parseTestPlan edge', () => {
   it('skips lines that do not match the Case pattern', () => {

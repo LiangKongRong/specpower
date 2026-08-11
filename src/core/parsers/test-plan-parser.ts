@@ -65,3 +65,37 @@ export async function parseTestPlanFile(path: string): Promise<TestCase[]> {
   const content = await fs.readFile(path, 'utf-8');
   return parseTestPlan(content);
 }
+
+/**
+ * Matches a line that looks like a Case header (`- **Case** ...`) so we can
+ * inspect the id portion without also matching the stricter `CASE_LINE`
+ * (which requires `T<n>`).
+ */
+const CASE_PREFIX = /^-\s+\*\*Case\*\*\s+(?<rest>.+?)\s*$/;
+
+/**
+ * Scan test-plan content for Case lines whose id is missing or not of the
+ * form `T<n>`. Such lines are silently skipped by `parseTestPlan` (the
+ * `CASE_LINE` regex requires `T\d+`), so this function surfaces them so the
+ * validator can reject them instead of dropping coverage.
+ *
+ * Returns 1-based line numbers and the raw line text for each malformed Case.
+ */
+export function findMalformedCases(
+  content: string,
+): { line: number; raw: string }[] {
+  const lines = content.split(/\r?\n/);
+  const out: { line: number; raw: string }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = CASE_PREFIX.exec(lines[i]);
+    if (!m) continue;
+    // The id is the token up to the first ':' (or the whole rest if no colon).
+    const rest = m.groups!.rest;
+    const colonIdx = rest.indexOf(':');
+    const idPart = colonIdx === -1 ? rest : rest.slice(0, colonIdx);
+    if (!/^T\d+$/.test(idPart.trim())) {
+      out.push({ line: i + 1, raw: lines[i] });
+    }
+  }
+  return out;
+}

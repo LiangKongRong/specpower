@@ -209,4 +209,51 @@ describe('validate test-plan integration', () => {
     expect(res.errors.some((e) => /no negative case/i.test(e.message))).toBe(true);
     await fs.rm(root, { recursive: true, force: true });
   });
+
+  it('reports malformed-id Case lines in test-plan.md instead of silently dropping them', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'validate-malformed-'));
+    const changeDir = join(root, 'specpower', 'changes', 'c3');
+    const deltaSpecsDir = join(changeDir, 'specs');
+    await fs.mkdir(deltaSpecsDir, { recursive: true });
+    await fs.writeFile(
+      join(deltaSpecsDir, 'cap.md'),
+      [
+        '## ADDED Requirements',
+        '',
+        '### Requirement: Demo Req',
+        'System SHALL do something.',
+        '',
+        '#### Scenario: happy path',
+        '- **WHEN** good input',
+        '- **THEN** system works',
+      ].join('\n'),
+      'utf-8',
+    );
+    await fs.writeFile(
+      join(changeDir, '.specpower.yaml'),
+      'schema: specpower\nphase: built\n',
+      'utf-8',
+    );
+    // test-plan with a malformed-id Case (X1 instead of T1) — silently dropped
+    // by the parser, but the validator must surface it.
+    await fs.writeFile(
+      join(changeDir, 'test-plan.md'),
+      [
+        '## Capability: cap',
+        '',
+        '### Requirement: Demo Req → Scenario: happy path',
+        '',
+        '- **Case** X1: bad id [positive]',
+        '  - Input: do()',
+        '  - Expected: ok',
+        '  - it(): bad case',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const res = await validateSpecFile(join(deltaSpecsDir, 'cap.md'));
+    expect(res.valid).toBe(false);
+    expect(res.errors.some((e) => /malformed.*id/i.test(e.message))).toBe(true);
+    await fs.rm(root, { recursive: true, force: true });
+  });
 });
