@@ -31,3 +31,58 @@ describe('parseTestPlan', () => {
     });
   });
 });
+
+const NO_ID = `## Capability: c
+
+### Requirement: r → Scenario: s
+
+- **Case** X1: no id prefix [positive]
+  - 输入: a
+  - 预期: b
+  - it(): n
+`;
+
+const DUP = `## Capability: c
+
+### Requirement: r → Scenario: s
+
+- **Case** T1: a [positive]
+  - 输入: a
+  - 预期: b
+  - it(): n
+
+- **Case** T1: dup [positive]
+  - 输入: a
+  - 预期: b
+  - it(): n2
+`;
+
+describe('parseTestPlan edge', () => {
+  it('skips lines that do not match the Case pattern', () => {
+    expect(parseTestPlan(NO_ID)).toEqual([]);
+  });
+  it('parses duplicate ids as separate entries (dedup is validator concern)', () => {
+    expect(parseTestPlan(DUP).map((c) => c.id)).toEqual(['T1', 'T1']);
+  });
+  it('parses multiple capabilities', () => {
+    const two = `## Capability: a
+
+### Requirement: r → Scenario: s
+- **Case** T1: x [positive]
+  - 输入: a
+  - 预期: b
+  - it(): n
+
+## Capability: b
+
+### Requirement: r2 → Scenario: s2
+- **Case** T2: y [positive]
+  - 输入: a
+  - 预期: b
+  - it(): n2
+`;
+    const cases = parseTestPlan(two);
+    expect(cases.map((c) => `${c.capability}/${c.id}`)).toEqual(['a/T1', 'b/T2']);
+  });
+});
+
