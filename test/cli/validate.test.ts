@@ -55,3 +55,44 @@ describe('validateSpecFile', () => {
     expect(result.errors.some((e) => e.message.includes('WHEN'))).toBe(true);
   });
 });
+
+describe('validate test-plan integration', () => {
+  const withPlanSpec = join(
+    import.meta.dirname,
+    '..',
+    'fixtures',
+    'test-plan',
+    'with-plan',
+    'specs',
+    'cap',
+    'spec.md',
+  );
+  const withoutPlanSpec = join(
+    import.meta.dirname,
+    '..',
+    'fixtures',
+    'test-plan',
+    'without-plan',
+    'specs',
+    'cap',
+    'spec.md',
+  );
+
+  it('passes (valid) when a change has a covering test-plan.md', async () => {
+    const res = await validateSpecFile(withPlanSpec);
+    expect(res.valid).toBe(true);
+    expect(res.errors).toEqual([]);
+  });
+
+  it('warns (not errors) when a testable change lacks test-plan.md', async () => {
+    const res = await validateSpecFile(withoutPlanSpec);
+    expect(res.valid).toBe(true);
+    expect(res.warnings.some((w) => /test-plan/i.test(w.message))).toBe(true);
+  });
+
+  it('promotes the missing test-plan warning to an error under --strict', async () => {
+    const res = await validateSpecFile(withoutPlanSpec, { strict: true });
+    expect(res.valid).toBe(false);
+    expect(res.errors.some((e) => /test-plan/i.test(e.message))).toBe(true);
+  });
+});
