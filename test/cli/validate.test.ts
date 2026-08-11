@@ -95,4 +95,72 @@ describe('validate test-plan integration', () => {
     expect(res.valid).toBe(false);
     expect(res.errors.some((e) => /test-plan/i.test(e.message))).toBe(true);
   });
+
+  it('does not flag baseline-regression refs as dangling when baseline specs exist', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'validate-baseline-'));
+    // baseline spec
+    const baselineDir = join(root, 'specpower', 'specs');
+    await fs.mkdir(baselineDir, { recursive: true });
+    await fs.writeFile(
+      join(baselineDir, 'cap.md'),
+      [
+        '### Requirement: Baseline Req',
+        'System SHALL ...',
+        '',
+        '#### Scenario: existing baseline scenario',
+        '- **WHEN** x',
+        '- **THEN** y',
+      ].join('\n'),
+      'utf-8',
+    );
+    // change dir with delta spec + test-plan
+    const changeDir = join(root, 'specpower', 'changes', 'c1');
+    const deltaSpecsDir = join(changeDir, 'specs');
+    await fs.mkdir(deltaSpecsDir, { recursive: true });
+    await fs.writeFile(
+      join(deltaSpecsDir, 'cap.md'),
+      [
+        '## ADDED Requirements',
+        '',
+        '### Requirement: New Req',
+        'System SHALL new.',
+        '',
+        '#### Scenario: new scenario',
+        '- **WHEN** a',
+        '- **THEN** b',
+      ].join('\n'),
+      'utf-8',
+    );
+    await fs.writeFile(
+      join(changeDir, '.specpower.yaml'),
+      'schema: specpower\nphase: built\n',
+      'utf-8',
+    );
+    await fs.writeFile(
+      join(changeDir, 'test-plan.md'),
+      [
+        '## Capability: cap',
+        '',
+        '### Requirement: New Req → Scenario: new scenario',
+        '',
+        '- **Case** T1: covers new [positive]',
+        '  - Input: do()',
+        '  - Expected: ok',
+        '  - it(): new case',
+        '',
+        '### Requirement: Baseline Req → Scenario: existing baseline scenario',
+        '',
+        '- **Case** T2: regression for baseline [positive]',
+        '  - Input: do2()',
+        '  - Expected: ok2',
+        '  - it(): baseline regression',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const res = await validateSpecFile(join(deltaSpecsDir, 'cap.md'));
+    expect(res.valid).toBe(true);
+    expect(res.errors).toEqual([]);
+    await fs.rm(root, { recursive: true, force: true });
+  });
 });

@@ -138,15 +138,74 @@ async function checkTestPlan(
   }
 
   const cases = await parseTestPlanFile(testPlanPath);
+  const baselineScenarios = await loadBaselineScenarios(changeRoot);
   const result = checkCoverage({
     deltaScenarios,
     cases,
-    baselineScenarios: [],
+    baselineScenarios,
   });
   for (const issue of result.issues) {
     errors.push({ message: issue.message });
   }
   return { errors, warnings };
+}
+
+/**
+ * Walk up from a change root to locate the project's baseline specs directory
+ * (`<projectRoot>/specpower/specs`). Returns null when no such directory exists
+ * (e.g. the fixture-style layout without a `specpower/` wrapper), in which case
+ * no baseline scenarios are loaded and baseline-regression refs would be
+ * reported as dangling — but only for layouts that genuinely lack baseline specs.
+ */
+function findBaselineSpecsDir(changeRoot: string): string | null {
+  let dir = changeRoot;
+  for (let i = 0; i < 8; i++) {
+    const candidate = join(dir, 'specpower', 'specs');
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) break; // filesystem root
+    dir = parent;
+  }
+  return null;
+}
+
+/**
+ * Load all baseline `{requirement, scenario}` pairs from the project's
+ * `specpower/specs/` tree by scanning `### Requirement:` + `#### Scenario:`
+ * headers in every `.md` file. Returns an empty array when the baseline specs
+ * directory cannot be found.
+ */
+async function loadBaselineScenarios(
+  changeRoot: string,
+): Promise<{ requirement: string; scenario: string }[]> {
+  const specsDir = findBaselineSpecsDir(changeRoot);
+  if (!specsDir) return [];
+  const files = await listMarkdownFiles(specsDir);
+  const out: { requirement: string; scenario: string }[] = [];
+  for (const rel of files) {
+    const content = await fs.readFile(join(specsDir, rel), 'utf-8');
+    out.push(...extractDeltaScenarios(content));
+  }
+  return out;
+}
+
+async function listMarkdownFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...(await listMarkdownFiles(full)).map((p) => join(entry.name, p)));
+    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      out.push(entry.name);
+    }
+  }
+  return out;
 }
 
 /**
