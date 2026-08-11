@@ -139,6 +139,14 @@ export function isChangeNameUsed(name: string, projectRoot: string): boolean {
   const archiveDir = join(projectRoot, 'specpower', 'changes', 'archive');
   if (!existsSync(archiveDir)) return false;
   const entries = readdirSync(archiveDir);
-  // 归档目录名格式 <date>-<name>
-  return entries.some((e) => e.endsWith(`-${name}`) && existsSync(join(archiveDir, e)));
+  // 归档目录名格式 YYYY-MM-DD-<name>；必须精确匹配，避免 "bar" 误匹配 "2026-01-01-foo-bar"
+  const re = new RegExp(`^\\d{4}-\\d{2}-\\d{2}-${escapeRegExp(name)}$`);
+  return entries.some((e) => re.test(e) && existsSync(join(archiveDir, e)));
+}
+
+/**
+ * Escape special regex characters in a string for use in a RegExp constructor.
+ */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

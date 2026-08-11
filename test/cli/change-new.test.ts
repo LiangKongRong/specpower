@@ -104,6 +104,22 @@ describe('isChangeNameUsed', () => {
   it('returns false when archive dir does not exist', () => {
     expect(isChangeNameUsed('anything', root)).toBe(false);
   });
+
+  it('does not false-match a suffix of an archived name', async () => {
+    // archive entry 2026-01-01-foo-bar must NOT block the distinct name "bar"
+    const archiveDir = join(
+      root,
+      'specpower',
+      'changes',
+      'archive',
+      '2026-01-01-foo-bar',
+    );
+    await fs.mkdir(archiveDir, { recursive: true });
+
+    expect(isChangeNameUsed('bar', root)).toBe(false);
+    // but the full archived name "foo-bar" IS still considered used
+    expect(isChangeNameUsed('foo-bar', root)).toBe(true);
+  });
 });
 
 describe('createChange reused name rejection', () => {
