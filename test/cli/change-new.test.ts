@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createChange } from '../../src/cli/commands/change-new.js';
+import { isChangeNameUsed } from '../../src/utils/change-utils.js';
 
 describe('createChange', () => {
   let tmpDir: string;
@@ -46,7 +47,7 @@ describe('createChange', () => {
     await createChange('my-feature', tmpDir);
 
     await expect(createChange('my-feature', tmpDir)).rejects.toThrow(
-      /already exists/,
+      /already used/,
     );
   });
 
@@ -68,5 +69,60 @@ describe('createChange', () => {
     );
     const content = await fs.readFile(metaPath, 'utf-8');
     expect(content).toContain('phase: plan');
+  });
+});
+
+describe('isChangeNameUsed', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await fs.mkdtemp(join(tmpdir(), 'change-name-used-'));
+  });
+
+  it('returns true when name exists in active changes', async () => {
+    const activeDir = join(root, 'specpower', 'changes', 'exists');
+    await fs.mkdir(activeDir, { recursive: true });
+    expect(isChangeNameUsed('exists', root)).toBe(true);
+  });
+
+  it('returns true when name exists in archive', async () => {
+    const archiveDir = join(
+      root,
+      'specpower',
+      'changes',
+      'archive',
+      '2026-01-01-old',
+    );
+    await fs.mkdir(archiveDir, { recursive: true });
+    expect(isChangeNameUsed('old', root)).toBe(true);
+  });
+
+  it('returns false for a fresh name', () => {
+    expect(isChangeNameUsed('brand-new', root)).toBe(false);
+  });
+
+  it('returns false when archive dir does not exist', () => {
+    expect(isChangeNameUsed('anything', root)).toBe(false);
+  });
+});
+
+describe('createChange reused name rejection', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await fs.mkdtemp(join(tmpdir(), 'change-reuse-'));
+  });
+
+  it('rejects a name reused from an archived change', async () => {
+    const archiveDir = join(
+      root,
+      'specpower',
+      'changes',
+      'archive',
+      '2026-01-01-old',
+    );
+    await fs.mkdir(archiveDir, { recursive: true });
+
+    await expect(createChange('old', root)).rejects.toThrow(/already used/);
   });
 });
