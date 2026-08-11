@@ -43,5 +43,49 @@ export function registerRenameScenarioCommand(program: Command): void {
 }
 
 // Task 16 implementation
-async function listAffectedTestPlans(_root: string, _old: string): Promise<string[]> { return []; }
-async function syncTestPlanRefs(_root: string, _old: string, _new: string): Promise<number> { return 0; }
+export async function listAffectedTestPlans(root: string, old: string): Promise<string[]> {
+  const found: string[] = [];
+  for await (const tp of findTestPlans(root)) {
+    const content = await fs.readFile(tp, 'utf-8');
+    if (new RegExp(`→\\s+Scenario:\\s*${escapeRegExp(old)}\\s*$`, 'm').test(content)) {
+      found.push(tp);
+    }
+  }
+  return found;
+}
+
+export async function syncTestPlanRefs(root: string, old: string, newName: string): Promise<number> {
+  const affected = await listAffectedTestPlans(root, old);
+  for (const tp of affected) {
+    let content = await fs.readFile(tp, 'utf-8');
+    const re = new RegExp(`(→\\s+Scenario:\\s*)${escapeRegExp(old)}(\\s*)$`, 'm');
+    content = content.replace(re, `$1${newName}$2`);
+    await fs.writeFile(tp, content, 'utf-8');
+  }
+  return affected.length;
+}
+
+async function* findTestPlans(root: string): AsyncIterable<string> {
+  const changesDir = join(root, 'specpower', 'changes');
+  if (!await dirExists(changesDir)) return;
+  // in-flight
+  for (const entry of await fs.readdir(changesDir, { withFileTypes: true })) {
+    if (entry.isDirectory() && entry.name !== 'archive') {
+      const tp = join(changesDir, entry.name, 'test-plan.md');
+      if (await fileExists(tp)) yield tp;
+    }
+  }
+  // archived
+  const archiveDir = join(changesDir, 'archive');
+  if (await dirExists(archiveDir)) {
+    for (const entry of await fs.readdir(archiveDir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        const tp = join(archiveDir, entry.name, 'test-plan.md');
+        if (await fileExists(tp)) yield tp;
+      }
+    }
+  }
+}
+
+async function dirExists(p: string): Promise<boolean> { try { return (await fs.stat(p)).isDirectory(); } catch { return false; } }
+async function fileExists(p: string): Promise<boolean> { try { return (await fs.stat(p)).isFile(); } catch { return false; } }

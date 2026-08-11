@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { renameScenario } from '../../src/cli/commands/rename-scenario.js';
+import {
+  renameScenario,
+  listAffectedTestPlans,
+  syncTestPlanRefs,
+} from '../../src/cli/commands/rename-scenario.js';
 
 describe('renameScenario', () => {
   let root: string;
@@ -20,5 +24,50 @@ describe('renameScenario', () => {
     const after = await fs.readFile(join(root, 'specpower', 'specs', 'cap', 'spec.md'), 'utf-8');
     expect(after).toContain('#### Scenario: new name');
     expect(after).not.toContain('#### Scenario: old name');
+  });
+
+  // Shared fixture for sync + dry-run: a baseline spec scenario "old name" plus
+  // an active and an archived test-plan referencing "old name".
+  async function buildSyncFixture(r: string): Promise<{ active: string; archived: string }> {
+    // baseline spec already created in beforeEach with `#### Scenario: old name`
+    // active change test-plan
+    const activeDir = join(r, 'specpower', 'changes', 'mychange');
+    await fs.mkdir(activeDir, { recursive: true });
+    const active = join(activeDir, 'test-plan.md');
+    await fs.writeFile(active,
+      `## Capability: cap\n\n### Requirement: r → Scenario: old name\n\n- **Case** T1: x [positive]\n  - Input: a\n  - Expected: b\n  - it(): n\n`, 'utf-8');
+    // archived change test-plan
+    const archDir = join(r, 'specpower', 'changes', 'archive', '2026-01-01-old2');
+    await fs.mkdir(archDir, { recursive: true });
+    const archived = join(archDir, 'test-plan.md');
+    await fs.writeFile(archived,
+      `## Capability: cap\n\n### Requirement: r → Scenario: old name\n\n- **Case** T1: y [negative]\n  - Input: a\n  - Expected: b\n  - it(): n2\n`, 'utf-8');
+    return { active, archived };
+  }
+
+  it('syncs test-plan references across active + archived changes', async () => {
+    const { active, archived } = await buildSyncFixture(root);
+    await renameScenario(root, 'cap', 'old name', 'new name');
+    const synced = await syncTestPlanRefs(root, 'old name', 'new name');
+    expect(synced).toBe(2);
+    const activeAfter = await fs.readFile(active, 'utf-8');
+    const archivedAfter = await fs.readFile(archived, 'utf-8');
+    expect(activeAfter).toContain('→ Scenario: new name');
+    expect(activeAfter).not.toContain('→ Scenario: old name');
+    expect(archivedAfter).toContain('→ Scenario: new name');
+    expect(archivedAfter).not.toContain('→ Scenario: old name');
+  });
+
+  it('--dry-run lists affected files without writing', async () => {
+    const { active, archived } = await buildSyncFixture(root);
+    const affected = await listAffectedTestPlans(root, 'old name');
+    expect(affected).toHaveLength(2);
+    expect(affected).toContain(active);
+    expect(affected).toContain(archived);
+    // files unchanged
+    const activeAfter = await fs.readFile(active, 'utf-8');
+    const archivedAfter = await fs.readFile(archived, 'utf-8');
+    expect(activeAfter).toContain('→ Scenario: old name');
+    expect(archivedAfter).toContain('→ Scenario: old name');
   });
 });
