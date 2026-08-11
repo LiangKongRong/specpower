@@ -110,9 +110,11 @@ function extractDeltaScenarios(content: string): { requirement: string; scenario
 /**
  * Run the test-plan coverage stage for a spec file.
  *
- * Returns errors (from checkCoverage when a test-plan.md exists) and a warning
- * when a testable change lacks a test-plan.md. The warning is NOT promoted
- * here; the caller handles `--strict`.
+ * Returns errors (from checkCoverage when a test-plan.md exists, plus
+ * malformed-id Case lines) and a warning when a testable change lacks a
+ * test-plan.md. The warning is NOT promoted to an error here; `--strict`
+ * promotion happens in `validateSpecFile` (the caller), which maps all
+ * warnings to errors after this function returns.
  */
 async function checkTestPlan(
   specPath: string,

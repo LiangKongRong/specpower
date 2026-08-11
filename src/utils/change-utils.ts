@@ -124,7 +124,7 @@ export async function listChanges(projectRoot: string): Promise<string[]> {
 /**
  * Checks whether a change name is already used — either by an active change
  * (`specpower/changes/<name>`) or by an archived change
- * (`specpower/changes/archive/*-<name>`, matched by `endsWith('-'+name)`).
+ * (`specpower/changes/archive/*-<name>`, matched by `^\d{4}-\d{2}-\d{2}-<name>$`).
  *
  * The test-plan token prefix `[<changeName>-<id>]` depends on the change name
  * being globally unique, so reuse (active or archived) must be rejected.

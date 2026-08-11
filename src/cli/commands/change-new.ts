@@ -4,14 +4,10 @@
  * Creates a new change directory with .specpower.yaml metadata.
  */
 
-import { join } from 'node:path';
 import type { Command } from 'commander';
 import { validateChangeName, writeChangeMetadata, isChangeNameUsed } from '../../utils/change-utils.js';
-import { directoryExists } from '../../utils/file-system.js';
 import { requireProjectRoot } from '../../utils/project-root.js';
 import type { ChangeMetadata } from '../../utils/change-metadata.js';
-
-const CHANGES_REL_PATH = 'specpower/changes';
 
 /**
  * Returns today's date as YYYY-MM-DD string.
@@ -39,12 +35,6 @@ export async function createChange(
 
   if (isChangeNameUsed(name, projectRoot)) {
     throw new Error(`Change name '${name}' is already used (active or archived). Choose a unique name — the test-plan token prefix depends on it.`);
-  }
-
-  const changeDir = join(projectRoot, CHANGES_REL_PATH, name);
-
-  if (await directoryExists(changeDir)) {
-    throw new Error(`Change "${name}" already exists at ${changeDir}`);
   }
 
   const metadata: ChangeMetadata = {

@@ -82,6 +82,7 @@ Present all four artifacts to the user with clear "first-iteration" labeling:
 - Delta `specs/` under the change directory — the contract
 - `design.md` — **first-iteration draft**; `/specpower:refine` will deepen this across multiple rounds
 - `tasks.md` — **first-iteration draft**; `/specpower:build` Phase A will rewrite this under strict writing-plans rules
+- `test-plan.md` — **first-iteration draft** generated in Stage 5b; `/specpower:build` Phase B will consume it as the TDD spec
 
 Make the iteration expectation explicit: the user should not treat design/tasks as final. They are deliberate first drafts produced so downstream skills have real substance to work with.
 
