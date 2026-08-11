@@ -163,4 +163,50 @@ describe('validate test-plan integration', () => {
     expect(res.errors).toEqual([]);
     await fs.rm(root, { recursive: true, force: true });
   });
+
+  it('reports missing-negative when a failure-admitting requirement lacks a negative case', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'validate-neg-'));
+    const changeDir = join(root, 'specpower', 'changes', 'c2');
+    const deltaSpecsDir = join(changeDir, 'specs');
+    await fs.mkdir(deltaSpecsDir, { recursive: true });
+    await fs.writeFile(
+      join(deltaSpecsDir, 'cap.md'),
+      [
+        '## ADDED Requirements',
+        '',
+        '### Requirement: Neg Req',
+        'System SHALL reject invalid input.',
+        '',
+        '#### Scenario: rejects invalid input',
+        '- **WHEN** bad input',
+        '- **THEN** system rejects',
+      ].join('\n'),
+      'utf-8',
+    );
+    await fs.writeFile(
+      join(changeDir, '.specpower.yaml'),
+      'schema: specpower\nphase: built\n',
+      'utf-8',
+    );
+    // test-plan covers the scenario with a POSITIVE case only — no negative case
+    await fs.writeFile(
+      join(changeDir, 'test-plan.md'),
+      [
+        '## Capability: cap',
+        '',
+        '### Requirement: Neg Req → Scenario: rejects invalid input',
+        '',
+        '- **Case** T1: happy path [positive]',
+        '  - Input: valid()',
+        '  - Expected: ok',
+        '  - it(): happy',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const res = await validateSpecFile(join(deltaSpecsDir, 'cap.md'));
+    expect(res.valid).toBe(false);
+    expect(res.errors.some((e) => /no negative case/i.test(e.message))).toBe(true);
+    await fs.rm(root, { recursive: true, force: true });
+  });
 });

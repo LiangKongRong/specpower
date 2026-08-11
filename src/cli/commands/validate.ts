@@ -139,15 +139,53 @@ async function checkTestPlan(
 
   const cases = await parseTestPlanFile(testPlanPath);
   const baselineScenarios = await loadBaselineScenarios(changeRoot);
+  const failureAdmittingRequirements = collectFailureAdmittingRequirements(deltaScenarios);
   const result = checkCoverage({
     deltaScenarios,
     cases,
     baselineScenarios,
+    failureAdmittingRequirements,
   });
   for (const issue of result.issues) {
     errors.push({ message: issue.message });
   }
   return { errors, warnings };
+}
+
+/**
+ * Negative/error-path scenario keywords. A Requirement whose delta scenario
+ * name contains any of these is treated as failure-admitting: its test-plan
+ * must include at least one `[negative]` Case, or `missing-negative` is reported.
+ * Mirrors the validator's NEGATIVE_SCENARIO_KEYWORDS set (inlined here because
+ * that constant is not exported).
+ */
+const NEGATIVE_SCENARIO_KEYWORDS = [
+  'throw', 'reject', 'invalid', 'missing', 'fail', 'error', 'deny',
+  'forbidden', 'timeout', 'exhaust', 'malform', 'corrupt', 'wrong',
+  'incorrect', 'duplicate', 'nonexistent',
+];
+
+/**
+ * Heuristic: collect the set of Requirement names that own at least one delta
+ * scenario whose name suggests a negative/error path (and thus the Requirement
+ * admits failure). These are passed to checkCoverage so a missing-negative
+ * error is raised when no `[negative]` Case covers the Requirement.
+ */
+function collectFailureAdmittingRequirements(
+  deltaScenarios: readonly { requirement: string; scenario: string }[],
+): string[] {
+  const out = new Set<string>();
+  for (const s of deltaScenarios) {
+    if (isLikelyNegativeScenario(s.scenario)) {
+      out.add(s.requirement);
+    }
+  }
+  return [...out];
+}
+
+function isLikelyNegativeScenario(scenarioName: string): boolean {
+  const lower = scenarioName.toLowerCase();
+  return NEGATIVE_SCENARIO_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
 /**
