@@ -7,9 +7,9 @@ const DOC = `# test-plan: demo
 
 ### Requirement: tool resolution → Scenario: unknown tool id throws
 
-- **Case** T1: 传入 nope [negative]
-  - 输入: resolveTool('nope')
-  - 预期: throw /Unknown tool 'nope'/
+- **Case** T1: pass an unsupported id [negative]
+  - Input: resolveTool('nope')
+  - Expected: throw /Unknown tool 'nope'/
   - it(): throws on unknown tool id
   - file: src/core/tools/adapters.test.ts
 `;
@@ -37,8 +37,8 @@ const NO_ID = `## Capability: c
 ### Requirement: r → Scenario: s
 
 - **Case** X1: no id prefix [positive]
-  - 输入: a
-  - 预期: b
+  - Input: a
+  - Expected: b
   - it(): n
 `;
 
@@ -47,13 +47,13 @@ const DUP = `## Capability: c
 ### Requirement: r → Scenario: s
 
 - **Case** T1: a [positive]
-  - 输入: a
-  - 预期: b
+  - Input: a
+  - Expected: b
   - it(): n
 
 - **Case** T1: dup [positive]
-  - 输入: a
-  - 预期: b
+  - Input: a
+  - Expected: b
   - it(): n2
 `;
 
@@ -69,20 +69,19 @@ describe('parseTestPlan edge', () => {
 
 ### Requirement: r → Scenario: s
 - **Case** T1: x [positive]
-  - 输入: a
-  - 预期: b
+  - Input: a
+  - Expected: b
   - it(): n
 
 ## Capability: b
 
 ### Requirement: r2 → Scenario: s2
 - **Case** T2: y [positive]
-  - 输入: a
-  - 预期: b
+  - Input: a
+  - Expected: b
   - it(): n2
 `;
     const cases = parseTestPlan(two);
     expect(cases.map((c) => `${c.capability}/${c.id}`)).toEqual(['a/T1', 'b/T2']);
   });
 });
-

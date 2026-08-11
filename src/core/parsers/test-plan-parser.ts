@@ -13,7 +13,7 @@ export interface TestCase {
 }
 
 const CASE_LINE = /^-\s+\*\*Case\*\*\s+(?<id>T\d+):\s+(?<desc>.+?)\s+\[(?<mark>positive|negative)\]\s*$/;
-const FIELD_LINE = /^\s+-\s+(?<k>输入|预期|it\(\)|file):\s*(?<v>.+?)\s*$/;
+const FIELD_LINE = /^\s+-\s+(?<k>Input|Expected|it\(\)|file):\s*(?<v>.+?)\s*$/;
 const CAPABILITY = /^##\s+Capability:\s*(?<cap>.+?)\s*$/;
 const REQ_SCEN = /^###\s+Requirement:\s*(?<req>.+?)\s+→\s+Scenario:\s*(?<scen>.+?)\s*$/;
 
@@ -29,8 +29,8 @@ export function parseTestPlan(content: string): TestCase[] {
     if (!cur) return;
     cases.push({
       id: cur.id, capability: cap, requirement: req, scenarioRef: scen,
-      mark: cur.mark, input: cur._fields['输入'] ?? '',
-      expected: cur._fields['预期'] ?? '',
+      mark: cur.mark, input: cur._fields['Input'] ?? '',
+      expected: cur._fields['Expected'] ?? '',
       itName: cur._fields['it()'] ?? '',
       file: cur._fields['file'],
     });
