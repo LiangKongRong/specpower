@@ -40,6 +40,14 @@ Flag any regressions introduced by the change.
 Check that the implementation does not introduce behavior beyond what the delta specs describe.
 Flag any undocumented changes.
 
+### Pass 4: Test-plan coverage (if the change has `test-plan.md`)
+
+Two-step Case→test coverage check:
+
+**Step 1 — omission (reliable, fails hard):** for each Case in `specpower/changes/<name>/test-plan.md`, scan the project's test files (`*.test.*` / `*.spec.*`) for its token `[<changeName>-<id>]`. Any Case whose token is absent → **FAIL** naming the Case (no-omission). Reliable because the token is globally unique and stable.
+
+**Step 2 — AST best-effort (deep, warns not fails):** for each located `it()`, AST-parse it and check the **minimal checkable**: the `it()` exists, parses, calls the function-under-test, and touches the Case's input. Do NOT judge semantic equivalence (NL↔code). If a minimal item can't be confirmed → **warning** with a gap note (not a fail). Staged; v1 is best-effort.
+
 ## Stage 3: Report
 
 Present a consolidated verification report:
