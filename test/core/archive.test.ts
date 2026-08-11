@@ -177,4 +177,49 @@ describe('archiveChange', () => {
     const content = await fs.readFile(metaPath, 'utf-8');
     expect(content).toContain('phase: archived');
   });
+
+  it('moves test-plan.md into archive and does NOT merge it into baseline', async () => {
+    const root = await createTestProject();
+
+    // Add a test-plan.md alongside the delta spec in the change directory.
+    const changeDir = join(root, 'specpower', 'changes', 'my-change');
+    const testPlanContent = [
+      '# test-plan: my-change',
+      '',
+      '<!-- TP_UNMERGED_MARKER: this content must never reach baseline specs -->',
+      '',
+      '## Capability: auth',
+      '',
+      '### Requirement: Two Factor Auth → Scenario: Enable 2FA',
+      '',
+      '- **Case** T1: user enables 2FA [negative]',
+      '  - 输入: enable2FA()',
+      '  - 预期: requires OTP',
+      "  - it(): throws on unknown [my-change-T1]",
+    ].join('\n');
+    await fs.writeFile(join(changeDir, 'test-plan.md'), testPlanContent, 'utf-8');
+
+    const result = await archiveChange('my-change', root);
+    expect(result.success).toBe(true);
+
+    // 1. test-plan.md moved to archive (rode along with the whole change dir).
+    const archiveDir = join(root, 'specpower', 'changes', 'archive');
+    const entries = await fs.readdir(archiveDir);
+    expect(entries.length).toBe(1);
+    const archivedTestPlan = join(archiveDir, entries[0], 'test-plan.md');
+    const movedContent = await fs.readFile(archivedTestPlan, 'utf-8');
+    expect(movedContent).toContain('TP_UNMERGED_MARKER');
+    expect(movedContent).toContain('# test-plan: my-change');
+
+    // 2. Baseline spec does NOT contain test-plan content (only the delta spec
+    //    requirement block is merged; test-plan.md is never merged).
+    const baselineSpec = await fs.readFile(
+      join(root, 'specpower', 'specs', 'auth.md'),
+      'utf-8',
+    );
+    expect(baselineSpec).toContain('Two Factor Auth'); // delta was merged
+    expect(baselineSpec).not.toContain('TP_UNMERGED_MARKER');
+    expect(baselineSpec).not.toContain('test-plan');
+    expect(baselineSpec).not.toContain('[my-change-T1]');
+  });
 });
