@@ -141,15 +141,15 @@ describe('initProject', () => {
     expect(content.length).toBeGreaterThan(0);
   });
 
-  it('copies templates to .claude/specpower/templates/ with 4 .md files', async () => {
+  it('copies templates to .claude/specpower/templates/ with 5 .md files (incl. test-plan.md)', async () => {
     await initProject(tmpDir, PACKAGE_ROOT);
 
     const templatesDir = join(tmpDir, '.claude', 'specpower', 'templates');
     const entries = await fs.readdir(templatesDir);
     const mdFiles = entries.filter((e) => e.endsWith('.md'));
-    expect(mdFiles).toHaveLength(4);
+    expect(mdFiles).toHaveLength(5);
 
-    const expectedTemplates = ['proposal.md', 'spec.md', 'design.md', 'tasks.md'];
+    const expectedTemplates = ['proposal.md', 'spec.md', 'design.md', 'tasks.md', 'test-plan.md'];
     for (const tmpl of expectedTemplates) {
       expect(mdFiles).toContain(tmpl);
     }

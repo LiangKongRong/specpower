@@ -88,13 +88,13 @@ describe('Package build verification', () => {
     expect(promptCount).toBeGreaterThanOrEqual(20);
   });
 
-  it('has exactly 4 templates', () => {
+  it('has exactly 5 templates (incl. test-plan.md)', () => {
     const templatesDir = join(PACKAGE_ROOT, 'templates');
     const templateCount = countFiles(
       templatesDir,
       (name) => name.endsWith('.md'),
     );
-    expect(templateCount).toBe(4);
+    expect(templateCount).toBe(5);
   });
 
   it('has the specpower schema', () => {
