@@ -11,6 +11,7 @@ import { registerValidateCommand } from './commands/validate.js';
 import { registerInitCommand } from './commands/init.js';
 import { registerSyncCommand } from './commands/sync.js';
 import { registerConfigCommand } from './commands/config.js';
+import { registerRenameScenarioCommand } from './commands/rename-scenario.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -39,6 +40,7 @@ registerValidateCommand(program);
 registerInitCommand(program);
 registerSyncCommand(program);
 registerConfigCommand(program);
+registerRenameScenarioCommand(program);
 
 program.exitOverride();
 
