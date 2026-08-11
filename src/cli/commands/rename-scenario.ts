@@ -58,7 +58,7 @@ export async function syncTestPlanRefs(root: string, old: string, newName: strin
   const affected = await listAffectedTestPlans(root, old);
   for (const tp of affected) {
     let content = await fs.readFile(tp, 'utf-8');
-    const re = new RegExp(`(→\\s+Scenario:\\s*)${escapeRegExp(old)}(\\s*)$`, 'm');
+    const re = new RegExp(`(→\\s+Scenario:\\s*)${escapeRegExp(old)}(\\s*)$`, 'mg');
     content = content.replace(re, `$1${newName}$2`);
     await fs.writeFile(tp, content, 'utf-8');
   }

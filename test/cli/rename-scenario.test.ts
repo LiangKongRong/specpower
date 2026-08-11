@@ -70,4 +70,41 @@ describe('renameScenario', () => {
     expect(activeAfter).toContain('→ Scenario: old name');
     expect(archivedAfter).toContain('→ Scenario: old name');
   });
+
+  it('syncs ALL refs when one test-plan references the same scenario twice', async () => {
+    // A single test-plan with two Cases (under two different Requirements)
+    // both referencing the same baseline scenario "old name". rename + sync
+    // must update BOTH refs, not just the first.
+    const activeDir = join(root, 'specpower', 'changes', 'multi');
+    await fs.mkdir(activeDir, { recursive: true });
+    const tp = join(activeDir, 'test-plan.md');
+    await fs.writeFile(tp,
+      [
+        '## Capability: cap',
+        '',
+        '### Requirement: r1 → Scenario: old name',
+        '',
+        '- **Case** T1: a [positive]',
+        '  - Input: a',
+        '  - Expected: b',
+        '  - it(): n1',
+        '',
+        '### Requirement: r2 → Scenario: old name',
+        '',
+        '- **Case** T2: c [positive]',
+        '  - Input: c',
+        '  - Expected: d',
+        '  - it(): n2',
+        '',
+      ].join('\n'), 'utf-8');
+
+    await renameScenario(root, 'cap', 'old name', 'new name');
+    const synced = await syncTestPlanRefs(root, 'old name', 'new name');
+    expect(synced).toBe(1);
+
+    const after = await fs.readFile(tp, 'utf-8');
+    const occurrences = (after.match(/→ Scenario: new name/g) ?? []).length;
+    expect(occurrences).toBe(2);
+    expect(after).not.toContain('→ Scenario: old name');
+  });
 });
