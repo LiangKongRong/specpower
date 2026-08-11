@@ -66,6 +66,24 @@ async function createTestProject(): Promise<string> {
     'utf-8',
   );
 
+  // test-plan.md covering the delta scenario (required by the test-plan gate)
+  await fs.writeFile(
+    join(changeDir, 'test-plan.md'),
+    [
+      '# test-plan: my-change',
+      '',
+      '## Capability: auth',
+      '',
+      '### Requirement: Two Factor Auth → Scenario: Enable 2FA',
+      '',
+      '- **Case** T1: user enables 2FA [positive]',
+      '  - Input: enable2FA()',
+      '  - Expected: requires OTP',
+      '  - it(): enables [my-change-T1]',
+    ].join('\n'),
+    'utf-8',
+  );
+
   return root;
 }
 
@@ -177,6 +195,32 @@ describe('archiveChange', () => {
     const metaPath = join(archiveDir, entries[0], '.specpower.yaml');
     const content = await fs.readFile(metaPath, 'utf-8');
     expect(content).toContain('phase: archived');
+  });
+
+  it('blocks archive of a testable change (has scenario) lacking test-plan.md', async () => {
+    const root = await createTestProject();
+    // remove the test-plan.md so the change is testable (has scenarios) but
+    // lacks the required test-plan artifact
+    await fs.rm(join(root, 'specpower', 'changes', 'my-change', 'test-plan.md'));
+
+    const result = await archiveChange('my-change', root);
+    expect(result.success).toBe(false);
+    expect(result.errors.some((e) => /test-plan\.md missing/i.test(e))).toBe(true);
+
+    // original change dir still present (not moved)
+    const stillExists = await fs
+      .stat(join(root, 'specpower', 'changes', 'my-change'))
+      .then(() => true)
+      .catch(() => false);
+    expect(stillExists).toBe(true);
+  });
+
+  it('--force archives a testable change even without test-plan.md', async () => {
+    const root = await createTestProject();
+    await fs.rm(join(root, 'specpower', 'changes', 'my-change', 'test-plan.md'));
+
+    const result = await archiveChange('my-change', root, { force: true });
+    expect(result.success).toBe(true);
   });
 
   it('moves test-plan.md into archive and does NOT merge it into baseline', async () => {
