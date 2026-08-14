@@ -220,6 +220,10 @@ sync 支持两种作用域，对应"skills 放哪一层"的两种取舍：
 - **build Phase A 改为 rewrite**：不再是"生成" tasks.md，而是基于 refine 稳定后的 artifact 用 Superpowers writing-plans 严格规则"精化"重写；发现 design 缺漏即停并回 refine
 - **`.specpower.yaml` 新增 `phase` 字段**：追踪变更生命周期（`plan` / `refined` / `built` / `archived`）；`specpower change archive` 默认要求 `phase=built`，可用 `--force` 跳过守门
 
+### test-plan.md（代码前的自然语言用例）
+
+每个含 delta scenario 的 change 在 plan Stage 5b 生成 `test-plan.md`（与 proposal/specs/design/tasks 并列的第 5 个 artifact）：从 spec scenario 派生具体用例（正/负标记 + 输入/预期 + 计划 `it()` 名 + 稳定唯一 `id:`），代码前先写、refine 迭代、build Phase B 照它写 `it()`（测试名嵌全局唯一 token `[<changeName>-<id>]`）、verify 两步覆盖校验、done 归档（不合并 baseline）。`specpower validate` 强制每 scenario ≥1 用例 + 负用例；`specpower rename-scenario` 原子改 baseline 场景名并同步所有 test-plan 引用。详见 `CONTRIBUTING.md`。
+
 ---
 
 ## 快速上手示例
@@ -495,7 +499,8 @@ your-project/
 │   │       ├── proposal.md
 │   │       ├── specs/
 │   │       ├── design.md
-│   │       └── tasks.md
+│   │       ├── tasks.md
+│   │       └── test-plan.md  # 自然语言测试用例（代码前先写；引用 spec scenario、带 [change-id] token）
 │   └── changes/archive/    # 归档的变更
 │
 └── .claude/

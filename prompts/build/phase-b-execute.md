@@ -83,6 +83,17 @@ digraph process {
 }
 ```
 
+## Test-plan consumption (if the change has `test-plan.md`)
+
+When dispatching an implementer for a change that has `specpower/changes/<name>/test-plan.md`:
+- Read the test-plan; each Case drives one `it()` test.
+- The `it()` name MUST embed the Case's token `[<changeName>-<id>]` (e.g.
+  `it('throws on unknown [add-test-plan-artifact-T3]', …)`), so `verify` can link
+  Case→test by the stable token.
+- A `[negative]` Case yields a test that reproduces the contract violation.
+- Follow TDD: write the `it()` first (RED), implement to pass (GREEN), refactor.
+- If a Case's planned `file:` is set, write the `it()` there; otherwise place per project convention.
+
 ## Model Selection
 
 Use the least powerful model that can handle each role to conserve cost and increase speed.

@@ -19,3 +19,19 @@ export interface ValidationResult {
   readonly errors: readonly ValidationError[];
   readonly warnings: readonly ValidationWarning[];
 }
+
+export type TestPlanIssueKind =
+  | 'uncovered-scenario'
+  | 'missing-negative'
+  | 'orphan-case'
+  | 'duplicate-id'
+  | 'duplicate-it-name'
+  | 'dangling-ref';
+
+export interface TestPlanIssue {
+  readonly kind: 'test-plan';
+  readonly issue: TestPlanIssueKind;
+  readonly message: string;
+  readonly scenario?: string;
+  readonly caseId?: string;
+}

@@ -125,4 +125,6 @@ Save each spec file. Then present a summary:
 
 ## Next Step
 
-Once delta specs are approved, proceed to `/specpower:refine` for design work or `/specpower:build` for planning.
+Once delta specs are approved:
+- If the change has ≥1 Scenario (testable), read `prompts/plan/test-plan-draft.md` and draft `test-plan.md` (NL test cases before code; cases carry a stable `id:` and the test code embeds a `[<changeName>-<id>]` token).
+- Proceed to `/specpower:refine` for design work or `/specpower:build` for planning.
