@@ -90,6 +90,23 @@ The system SHALL expand `!include <rel-from-project-root>` directives in `specpo
 - **AND** both `coding/01.md` and `review/01.md` SHALL contain `shared.md`'s full content after baking
 - **AND** the implementer and reviewer each receive the complete shared rules (no cross-file starvation)
 
+#### Scenario: Wildcard include expands all matching files in a directory
+- **WHEN** a custom `.md` contains `!include docs/rules/*.md`
+- **AND** `docs/rules/` contains `01-naming.md`, `02-arch.md`, `10-security.md`, and `README.txt`
+- **THEN** the bake SHALL expand all top-level `.md` files matching the glob (`.txt` filtered out by extension whitelist)
+- **AND** SHALL concatenate them in lexicographic (dictionary) order so numeric prefixes control precedence
+- **AND** each matched file SHALL be recursively expanded (its own `!include` directives resolved)
+
+#### Scenario: Wildcard with no matches throws and aborts
+- **WHEN** a custom `.md` contains `!include docs/rules/*.md` and `docs/rules/` is empty or has no `.md` match
+- **THEN** the bake SHALL throw a `no files matched` error naming the directive
+- **AND** the sync SHALL abort (fail-fast — an empty/non-matching wildcard is a config error, not a silent no-op)
+
+#### Scenario: Wildcard directory outside include-roots throws
+- **WHEN** a custom `.md` contains `!include ../outside/*.md` and `../outside/` is outside every include-root
+- **THEN** the bake SHALL throw an `outside include-roots` error
+- **AND** no file under `../outside/` SHALL be expanded (no leak)
+
 #### Scenario: Default roots allow project docs without config
 - **WHEN** a custom `.md` contains `!include docs/coding-style.md` (or `arch/adr-007.md` or `design/arch.md`) and the project's `config.yaml` does NOT declare `custom.include-roots`
 - **AND** the target file exists

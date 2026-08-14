@@ -45,6 +45,24 @@ duplicating it, via a whole-line directive:
 !include docs/coding-style.md
 ```
 
+A **wildcard** form expands all matching files in a directory (lexicographic,
+extension-whitelisted):
+
+```
+!include docs/rules/*.md
+```
+
+- `*` matches non-`/` chars; `?` matches one non-`/` char. Only `*`/`?` are special.
+- Matched files are sorted lexicographically — use zero-padded numeric
+  prefixes (`01-`, `02-`, `10-`) to control precedence (dictionary order puts
+  `10-` before `2-` without zero-padding).
+- Only extension-whitelisted matches are included (`.md`/`.txt`/`.yaml`/`.yml`/`.json`);
+  other files in the directory are ignored.
+- Each matched file is recursively expanded (its own `!include`s resolved).
+- **No matches → throws** (fail-fast: an empty/non-matching wildcard is a
+  config error, not a silent no-op). Directory missing or outside the sandbox
+  also throws.
+
 - **Path**: relative to the **project root** (e.g. `!include docs/x.md`,
   `!include arch/adr-007.md`, or `!include specpower/custom/review/shared.md`
   for custom-to-custom reuse). Never absolute.

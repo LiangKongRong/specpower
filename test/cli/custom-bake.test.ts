@@ -207,6 +207,74 @@ describe('bakeCustomIncludes', () => {
     await expect(bake()).rejects.toThrow(/not a regular file/);
   });
 
+  it('wildcard include expands all matching .md in a directory (lexicographic)', async () => {
+    await write(
+      join(dir, 'specpower', 'config.yaml'),
+      'schema: specpower\ncustom:\n  include-roots: [docs/]\n',
+    );
+    await write(join(dir, 'docs', 'rules', '02-arch.md'), 'ARCH\n');
+    await write(join(dir, 'docs', 'rules', '01-naming.md'), 'NAMING\n');
+    await write(join(dir, 'docs', 'rules', '10-security.md'), 'SECURITY\n');
+    // non-.md files in the same dir are ignored by the wildcard
+    await write(join(dir, 'docs', 'rules', 'README.txt'), 'IGNORED\n');
+    await write(
+      join(dir, 'specpower', 'custom', 'coding', 'a.md'),
+      'before\n!include docs/rules/*.md\nafter\n',
+    );
+
+    await bake();
+
+    const out = await read(join(dir, 'specpower', 'custom', 'coding', 'a.md'));
+    expect(out).toContain('before');
+    expect(out).toContain('after');
+    // Lexicographic order: 01- < 02- < 10-
+    const namingIdx = out.indexOf('NAMING');
+    const archIdx = out.indexOf('ARCH');
+    const secIdx = out.indexOf('SECURITY');
+    expect(namingIdx).toBeLessThan(archIdx);
+    expect(archIdx).toBeLessThan(secIdx);
+    expect(out).not.toContain('IGNORED'); // .txt filtered out
+    expect(out).not.toMatch(/!\s*include/); // no directive residue
+  });
+
+  it('wildcard include throws on no matches (fail-fast)', async () => {
+    await write(
+      join(dir, 'specpower', 'config.yaml'),
+      'schema: specpower\ncustom:\n  include-roots: [docs/]\n',
+    );
+    await fs.mkdir(join(dir, 'docs', 'rules'), { recursive: true }); // empty dir
+    await write(
+      join(dir, 'specpower', 'custom', 'coding', 'a.md'),
+      '!include docs/rules/*.md\n',
+    );
+
+    await expect(bake()).rejects.toThrow(/no files matched/);
+  });
+
+  it('wildcard include throws when directory does not exist (fail-fast)', async () => {
+    await write(
+      join(dir, 'specpower', 'config.yaml'),
+      'schema: specpower\ncustom:\n  include-roots: [docs/]\n',
+    );
+    await write(
+      join(dir, 'specpower', 'custom', 'coding', 'a.md'),
+      '!include docs/nonexistent/*.md\n',
+    );
+
+    await expect(bake()).rejects.toThrow(/directory not found/);
+  });
+
+  it('wildcard include throws when directory is outside include-roots', async () => {
+    await fs.mkdir(join(dir, '..', 'outside'), { recursive: true });
+    await write(join(dir, '..', 'outside', 'a.md'), 'OUT\n');
+    await write(
+      join(dir, 'specpower', 'custom', 'coding', 'a.md'),
+      '!include ../outside/*.md\n',
+    );
+
+    await expect(bake()).rejects.toThrow(/outside include-roots/);
+  });
+
   it('rejects a file exceeding the per-file size limit', async () => {
     // 64 KB + 1 byte of content.
     const big = 'x'.repeat(64 * 1024 + 1);

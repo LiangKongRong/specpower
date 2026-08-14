@@ -34,6 +34,8 @@ import {
   relative,
   isAbsolute,
   extname,
+  dirname,
+  basename,
 } from 'node:path';
 import yaml from 'js-yaml';
 
@@ -91,6 +93,21 @@ function isUnderRoot(target: string, root: string): boolean {
 
 function isUnderAnyRoot(target: string, roots: readonly string[]): boolean {
   return roots.some((r) => isUnderRoot(target, r));
+}
+
+/**
+ * Converts a simple glob pattern to a RegExp. Only `*` (matches non-`/`) and
+ * `?` (matches single non-`/`) are special; everything else is escaped.
+ * Used by wildcard `!include docs/rules/*.md` to enumerate a directory.
+ */
+function globToRegex(pattern: string): RegExp {
+  let re = '';
+  for (const ch of pattern) {
+    if (ch === '*') re += '[^/]*';
+    else if (ch === '?') re += '[^/]';
+    else re += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${re}$`);
 }
 
 /**
@@ -212,6 +229,59 @@ async function expandFile(absFile: string, ctx: BakeCtx): Promise<string> {
     }
 
     const target = resolve(ctx.projectRoot, inc);
+
+    // Wildcard include: `!include docs/rules/*.md` expands all matching files
+    // in the directory (lexicographic, extension-whitelisted, per-file once).
+    if (inc.includes('*') || inc.includes('?')) {
+      const dirPath = dirname(target);
+      const pattern = basename(target);
+      let realDir: string;
+      try {
+        realDir = fsSync.realpathSync(dirPath);
+      } catch {
+        throw includeError(ctx, absFile, i + 1, directive, `directory not found: ${inc}`);
+      }
+      if (!isUnderAnyRoot(realDir, ctx.roots)) {
+        const rootNames = ctx.roots
+          .map((r) => relative(ctx.projectRoot, r) || r)
+          .join(', ');
+        throw includeError(
+          ctx,
+          absFile,
+          i + 1,
+          directive,
+          `directory is outside include-roots [${rootNames}]`,
+        );
+      }
+      let entries: fsSync.Dirent[];
+      try {
+        entries = await fs.readdir(realDir, { withFileTypes: true });
+      } catch {
+        entries = [];
+      }
+      const re = globToRegex(pattern);
+      const matches = entries
+        .filter((e) => e.isFile())
+        .map((e) => e.name)
+        .filter((name) => re.test(name))
+        .filter((name) => ALLOWED_EXT.has(extname(name).toLowerCase()))
+        .sort();
+      if (matches.length === 0) {
+        throw includeError(
+          ctx,
+          absFile,
+          i + 1,
+          directive,
+          `no files matched ${inc}`,
+        );
+      }
+      const parts: string[] = [];
+      for (const name of matches) {
+        parts.push(await expandFile(join(realDir, name), ctx));
+      }
+      out.push(parts.join('\n'));
+      continue;
+    }
 
     const ext = extname(target).toLowerCase();
     if (!ALLOWED_EXT.has(ext)) {
