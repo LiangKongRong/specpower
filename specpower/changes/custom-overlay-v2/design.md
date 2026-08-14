@@ -1,182 +1,193 @@
 # Design — custom-overlay-v2
 
-> First-iteration design. `/specpower:refine` will challenge these decisions across multiple rounds. A 阶段代码已实现并验证（16 测试通过），本设计记录决策 rationale 供 refine 深化。
+> First-iteration design, refined across 6 rounds. A-stage code is implemented and verified (260 tests pass). This design records the decisions and rationale.
 
 ## 1. Context
 
-`customization-layer` change（phase=built，未归档）交付了 custom 叠加层：包根 `custom/{coding,review}/` 经 `copyCustom` 复制到项目 `specpower/custom/`（gitignored、sync 覆盖），4 个 prompt 注入"存在性守卫段"让 subagent 自读。实测暴露两处技术缺口：
+The `customization-layer` change (phase=built, archived-then-superseded) shipped a custom overlay layer: package-root `custom/{coding,review}/` is copied by `copyCustom` to project `specpower/custom/` (gitignored, sync-overwritten), and 4 prompts injected "existence-guard" sections telling the subagent to self-read. Field-testing exposed two technical gaps:
 
-- **subagent 不读**：守卫段"If `specpower/custom/...` exists, Read all .md"把读取责任丢给 subagent（LLM），subagent 把"if exists"当可选、跳过；且违反 `phase-b-execute.md` 自己的"Never: Make subagent read plan file (provide full text instead)"。
-- **worktree 物理缺失**：`specpower/custom/`（及 `.claude/specpower/prompts/` 等）被 gitignore，git worktree 只含已跟踪文件，Phase B worktree 里 custom 根本不在。
-- **不能复用项目文档**：custom `.md` 不能引用 `docs/coding-style.md`、ADR 等既有文档，只能复制粘贴。
+- **Subagents don't read:** the guard section "if `specpower/custom/...` exists, read all .md" delegates the read to the subagent (LLM), which treats "if exists" as optional and skips it; also violates `phase-b-execute.md`'s own "Never: make a subagent read plan file (provide full text instead)".
+- **worktree physical absence:** `specpower/custom/` (and `.claude/specpower/prompts/` etc.) are gitignored, so a git worktree (only tracked files) lacks them; Phase B in a worktree cannot read custom.
+- **No reuse of project docs:** custom `.md` cannot reference existing project docs (coding-style, ADRs, architecture notes) without copy-paste.
 
-A 阶段已实现修复（`src/cli/commands/custom-bake.ts` + 4 占位符 + init/sync 接入 + worktree sync），16 单测 + 端到端通过。本 change 将其 spec 化、并调整 `include-roots` 默认含 `docs/`。
+A-stage implemented the fix (`src/cli/commands/custom-bake.ts` + 4 placeholders + init/sync wiring + worktree sync), 260 tests pass + e2e verified. This change specs it and adjusts `include-roots` defaults.
 
-技术约束：TypeScript CLI（commander + js-yaml）、vitest、prompts 是静态 md 文件（无运行时模板引擎）、custom 是项目 cwd 相对路径（tool-agnostic，不被 `rewritePromptRefs` 重写）。
+Technical constraints: TypeScript CLI (commander + js-yaml), vitest, prompts are static `.md` files (no runtime template engine), custom is project-cwd-relative (tool-agnostic, not rewritten by `rewritePromptRefs`).
 
 ## 2. Goals / Non-Goals
 
 **Goals**
-- custom 规则**必然**进 subagent prompt 文本（不靠 subagent 自觉读、不依赖 cwd/worktree）
-- 支持 `!include` 复用项目既有文档（coding-style、ADR、架构图），不复制粘贴
-- worktree 模式下 controller 能读到 prompt 与 custom（gitignored 资产可达）
-- 不新增 CLI 命令（复用 `init`/`sync`）
-- `!include` 展开确定性、可单元测试（TS，非 LLM）
+- Custom rules **necessarily** enter the subagent prompt text (not relying on subagent self-read, not depending on cwd/worktree).
+- Support `!include` to reuse existing project docs (coding-style, ADRs, architecture notes), no copy-paste.
+- worktree mode: controller can read prompt + custom (gitignored assets reachable).
+- No new CLI command (reuse `init`/`sync`).
+- `!include` expansion is deterministic and unit-testable (TS, not LLM).
 
 **Non-Goals**
-- 不加项目级叠加目录（如 `specpower/local/`）——项目级定制通过团队约定项目在某目录（如 `docs/rules/`）放规则 + `!include` 引用实现，递归展开进 prompt，不需单独目录
-- 不扩展 `!include` 语法（不支持变量、条件、循环宏）——只整行 `!include <path>`
-- 不在 user scope 分发 custom——custom 仍 project scope
-- 不让 controller 运行时解析 `!include`——展开只在 init/sync 烘焙时做
+- No project-level overlay directory (e.g. `specpower/local/`) — project-level customization is supported via team-conventioned project dirs (e.g. `docs/rules/`) + `!include`; no separate directory needed.
+- No `!include` syntax extensions (no variables, conditionals, loop macros) — only whole-line `!include <path>` and wildcard `!include dir/*.md`.
+- No user-scope distribution of custom — custom stays project scope.
+- No runtime `!include` parsing by the controller — expansion happens only at init/sync bake time.
 
 ## 3. Design Decisions
 
-### D1: custom 投递机制 — sync 烘焙 custom 进 prompt 占位符
+### D1: custom delivery mechanism — sync-bake into prompt placeholders
 
 **Options considered:**
-- (a) subagent 自读（原始）：守卫段"if exists, subagent read"。失败——subagent 跳过可选读 + worktree 缺失 + 违反 provide-full-text。
-- (b) controller 内联占位符：controller dispatch 前读 custom 填占位符。规则进 prompt，但依赖 controller（LLM）遵守。
-- (c) 新增 `specpower custom show` CLI 命令：最可测但增命令（否决）。
-- (d) sync 烘焙 custom 进 prompt 占位符：sync 时读 custom（已 `!include` 烘焙）替换 prompt 文件副本的 `[CONTROLLER: ...]` 占位符为实际规则文本。controller/subagent 读 prompt 即得规则。无 LLM 依赖（确定性 TS）。
+- (a) Subagent self-read (original): guard "if exists, subagent read". Fails — subagent skips optional read + worktree absence + violates provide-full-text.
+- (b) Controller-runtime-inline: controller reads custom and fills the placeholder before dispatch. Rules enter the prompt, but depends on the controller (LLM) to comply.
+- (c) New `specpower custom show` CLI command: most testable but **adds a command** (user vetoed).
+- (d) sync-bake custom into prompt placeholders: at sync time, read custom (already `!include`-baked) and replace the `[CONTROLLER: ...]` placeholder in the prompt-file **copy** with the rule text. controller/subagent read the prompt and get rules. No LLM dependency (deterministic TS).
 
-**Chosen:** (d) sync 烘焙 custom 进 prompt 占位符。
+**Chosen:** (d) sync-bake custom into prompt placeholders.
 
-**Rationale:** 消除 controller 内联的 LLM 依赖（主路径确定性）——sync 读 `specpower/custom/{coding,review}/` 顶层 `.md`（字典序，已 `!include` 烘焙），替换对应 prompt 文件副本的 `[CONTROLLER: ...]` 占位符为实际规则文本，controller/subagent 读 prompt 文件即得规则，不靠 LLM 运行时填。符合 specpower"确定性优先、不靠 LLM 自觉"原则，比 (b) 的"controller 读+填"更可靠。
+**Rationale:** Eliminates the controller-runtime-inline LLM dependency (deterministic main path) — sync reads `specpower/custom/{coding,review}/` top-level `.md` (lexicographic, already `!include`-baked), replaces the corresponding prompt-file copy's `[CONTROLLER: ...]` placeholder with the rule text, controller/subagent read the prompt and get rules without runtime fill. Conforms to specpower's "deterministic-first, don't rely on LLM self-discipline" principle, more reliable than (b)'s "controller reads + fills".
 
-**映射**（sync 烘焙时，4 处）：
-- `specpower/custom/coding/` → `prompts/shared/implementer-prompt.md` 的 `Project Coding Standards` 占位符、`prompts/shared/receiving-code-review.md` 的占位符
-- `specpower/custom/review/` → `prompts/shared/code-reviewer-prompt.md` 的 `Custom Standards` 占位符、`prompts/review/code-review.md` 的 template 占位符
+**Mapping** (sync bake, 4 entries):
+- `specpower/custom/coding/` → `prompts/shared/implementer-prompt.md` + `prompts/shared/receiving-code-review.md`
+- `specpower/custom/review/` → `prompts/shared/code-reviewer-prompt.md` + `prompts/review/code-review.md`
 
-**代价**：sync 要硬编码 4 处映射；prompt 副本含项目 custom 内容（调试时 prompt 不"纯净"，看 prompt 会看到项目规则而非纯模板）；custom 改了要 sync 才进 prompt（但本来就要 sync 烘焙 `!include`，一致）。**约束（固化快照）**：sync 烘焙是时间点快照——sync 后若被 `!include` 引用的项目文档（如团队约定项目在 `docs/rules/` 放的项目级规则）发生变更，prompt 里仍是旧快照，系统不感知，需重新 `specpower sync` 才更新。项目级定制通过"团队约定项目目录 + `!include`"支持（不需单独目录），但其变更需 re-sync 才进 prompt，这是 (d) 确定性固化的固有约束。
+**Costs:** sync must hardcode 4 mappings; prompt copies contain project custom content (debug: prompt not "pristine" — you see project rules, not the pure template); custom changes require sync to enter the prompt (but sync is already required for `!include` baking, so consistent).
 
-**best-effort 兜底链（保留 D9 + D11）**：(d) 是确定性主路径，但若 sync 没跑/烘焙失败，D9（subagent 自检 prompt 含字面 `[CONTROLLER:` → 报告 DONE_WITH_CONCERNS）+ D11（controller 检测 custom `!include` 残留 → 警告 sync）双层兜底，把"sync 没跑/失败"暴露给用户。D9/D11 不删、不简化——即使主路径确定性，兜底仍保留以覆盖 sync 未执行/失败的场景。
+**best-effort fallback chain (keep D9 + D11):** (d) is the deterministic main path, but if sync didn't run / bake failed, D9 (subagent self-check: prompt contains literal `[CONTROLLER:` → report DONE_WITH_CONCERNS) + D11 (controller detects `!include` residue in custom → warn sync) provide a two-layer fallback surfacing "sync didn't run / failed". D9/D11 are kept (not deleted, not simplified) — even with a deterministic main path, fallbacks cover the sync-not-run / bake-failed case.
 
-### D2: `!include` 展开时机 — init/sync 烘焙（非运行时）
-
-**Options considered:**
-- (a) controller 运行时展开：dispatch 前解析 `!include`。不可测（LLM）、循环/沙箱/大小无法保证、worktree 仍需 custom 在。
-- (b) init/sync 烘焙时展开（原地写回 `specpower/custom/`）：确定性 TS、可单测、worktree sync 后一致、controller/subagent 不感知 include。
-- (c) 烘焙到独立副本目录：避免改原文件。但 controller 已读 `specpower/custom/`，多一层副本增加路径混乱。
-
-**Chosen:** (b) init/sync 烘焙原地写回。
-
-**Rationale:** `specpower/custom/` 是 gitignored 的可再生副本（sync 清空再拷），原地烘焙不破坏源（源是包根 `custom/`）。烘焙后 controller 读到的就是纯文本，无需感知 include。`copyCustom` 之后立即 `bakeCustomIncludes`，一次 sync 完成复制+烘焙。
-
-### D3: include 路径基准 — 相对项目根
+### D2: `!include` expansion timing — init/sync bake (not runtime)
 
 **Options considered:**
-- (a) 相对 include 所在文件目录（C `#include` 惯例）：自包含。但 custom 在 `specpower/custom/coding/`，引项目根 `docs/` 要 `../../../docs/x.md`，写起来烦。
-- (b) 相对项目根：`!include docs/coding-style.md`、`!include arch/adr-007.md` 最直观。custom 互引用 `specpower/custom/review/shared.md` 也稳定。worktree 里"项目根"= worktree 根，一致。
+- (a) Controller-runtime expansion: dispatch-time `!include` resolution. Untestable (LLM), cycle/sandbox/size can't be guaranteed, worktree still needs custom present.
+- (b) init/sync bake-time expansion (in-place write-back to `specpower/custom/`): deterministic TS, unit-testable, worktree-consistent, controller/subagent unaware of `!include`.
+- (c) Bake to a separate copy dir: avoid touching the original. But controller already reads `specpower/custom/`; a copy adds path confusion.
 
-**Chosen:** (b) 相对项目根。
+**Chosen:** (b) init/sync bake in-place.
 
-**Rationale:** 主场景是复用项目文档，相对项目根最直观、最短。custom 整体在 `specpower/custom/` 下，相对项目根路径稳定（custom 移动不影响）。绝对路径一律拒绝（不可移植、跨项目不一致）。
+**Rationale:** `specpower/custom/` is a gitignored regeneratable copy (sync clear-then-copy), in-place baking doesn't touch the source (source is package-root `custom/`). After baking, controller reads plain text, unaware of `!include`. `copyCustom` is immediately followed by `bakeCustomIncludes`, one sync does copy + bake.
 
-### D4: include 失败策略 — 全抛错中断
-
-**Options considered:**
-- (a) 全抛错中断：所有失败（target 缺失、越界、循环、超限、坏扩展名、绝对路径、目录）抛错中断 sync，报文件名+行号+原因。
-- (b) 全降级：所有失败降级为注释。宽松，但掩盖配置错误。
-- (c) 软+硬（缺失/越界降级注释，结构错误抛错）：曾选，但降级隐藏问题。
-
-**Chosen:** (a) 全抛错中断。
-
-**Rationale:** 显式报错优于隐藏问题。降级注释让 sync"成功"，用户不知道 custom 文档未生效（target 缺失/越界被静默跳过），后续 build/review 行为异常时要花大量时间回溯定位"为什么规则没起作用"——而问题其实在 sync 时就该暴露。一开始就抛错，用户立即知道哪个 `!include` 坏了（文件名+行号+原因），修复成本最低。这是 fail-fast 原则，与 specpower 一贯的"不静默"（占位符缺失写 `none`、build 前 `!include` 残留警告）一脉相承。default roots 已最宽（`specpower/+docs/+arch/+design/`），常见 include 不越界；越界/缺失是真错误（团队契约：消费项目应有被 include 的文档），抛错让契约违反显式。**trade-off**：消费项目缺文档时 sync 崩——但这正是要暴露的，不是要隐藏的。
-
-### D5: include-roots 默认值 — `specpower/` + `docs/` + `arch/` + `design/`
+### D3: include path base — relative to project root
 
 **Options considered:**
-- (a) 默认只 `specpower/`：项目用 `!include docs/x.md` 必须在 config 声明 docs/。多一步配置。
-- (b) 默认 `specpower/` + `docs/`：团队直接 `!include docs/coding-style.md` 免声明。docs/ 是约定俗成的文档目录。
-- (c) 默认 `specpower/` + `docs/` + `arch/` + `design/`：多含 arch/（ADR 常用）、design/（设计文档常用），覆盖最常见的项目文档目录名。
-- (d) 默认含更多（wiki/、doc/ 等）：猜测性强，匹配不上真实布局反而误导。
+- (a) Relative to the including file's directory (C `#include` convention): self-contained. But custom lives in `specpower/custom/coding/`, referencing project-root `docs/` requires `../../../docs/x.md` — verbose.
+- (b) Relative to project root: `!include docs/coding-style.md`, `!include arch/adr-007.md` are most intuitive. custom-to-custom `specpower/custom/review/shared.md` is also stable. In a worktree "project root" = worktree root, consistent.
 
-**Chosen:** (c) 默认 `specpower/` + `docs/` + `arch/` + `design/`。
+**Chosen:** (b) relative to project root.
 
-**Rationale:** docs/、arch/、design/ 是最常见的项目文档目录约定，默认含它们让团队复用项目文档"开箱即用"。这些目录不存在时 include 降级注释，不强求项目有；项目仍可在 config 追加/覆盖（如 `wiki/`）。比只 docs/ 覆盖更广，比猜更多目录（wiki/doc）更稳——前三个是最通用的。
+**Rationale:** The main use case is reusing project docs — relative-to-project-root is most intuitive and shortest. custom lives under `specpower/custom/`, project-root-relative paths are stable (moving custom doesn't break). Absolute paths are rejected (non-portable, cross-project inconsistent).
 
-### D6: worktree gitignored 资产缺失 — phase-b-worktree setup 跑 `specpower sync`
+### D4: include failure policy — all-throw abort (fail-fast)
 
 **Options considered:**
-- (a) worktree setup 复制 custom/（+ prompts/）进 worktree：要写复制逻辑，且 prompts 问题独立于 custom。
-- (b) worktree setup 跑 `specpower sync`（已有命令）：复用现有复制+烘焙，一次解决 prompts/schemas/templates/custom 全部 gitignored 资产。
-- (c) 让 controller/subagent 用 `git rev-parse --git-common-dir/..` 读主项目根：每个 subagent 解析主项目根，脆弱。
+- (a) All-throw abort: every failure (missing/out-of-sandbox/cycle/over-limit/bad-extension/absolute/directory) throws + aborts sync, reporting file:line:directive.
+- (b) All-degrade: every failure degrades to a comment. Lenient, but masks config errors.
+- (c) Soft+hard (missing/out-of-sandbox degrade-to-comment, structural throw): was chosen, but degradation hides problems.
 
-**Chosen:** (b) worktree setup 跑 `specpower sync`。
+**Chosen:** (a) all-throw abort.
 
-**Rationale:** sync 已是现成的"复制 gitignored 资产到 cwd 项目"机制，worktree 里跑一次即把所有资产（含烘焙后的 custom）带进 worktree。不增命令、不增复制逻辑、inline/worktree 行为一致（都读 cwd 相对的 `specpower/custom/`）。守卫：仅当 `specpower/config.yaml` 存在 + `specpower` 在 PATH 时跑，否则静默跳过（非 specpower 项目或未装 CLI 不报错）。
+**Rationale:** Surfacing errors explicitly beats hiding. A degraded comment lets sync "succeed" while the user's custom rules silently don't take effect (target missing/out-of-sandbox skipped), causing hours of later debugging "why aren't my rules applied" — the problem should surface at sync time. Throwing immediately tells the user which `!include` is broken (file:line:directive:reason), cheapest to fix. This is fail-fast, consistent with specpower's "no silence" (placeholder missing writes `none`, build-time `!include` residue warning). Default roots are already widest (`specpower/+docs/+arch/+design/`), so common includes don't go out-of-sandbox; out-of-sandbox/missing is a real error (team contract: consumers must have the included doc), throwing makes the contract violation explicit. **Trade-off:** consumer project missing the doc → sync aborts — but that's exactly what should surface, not be hidden.
 
-### D7: 循环/菱形语义 — 循环检测栈 + per-top-level-file once 去重
-
-**Options considered:**
-- (a) 循环检测 + 每次展开（菱形/跨文件都重复）：简单。但规则文档重复内容。
-- (b) 循环检测栈 + **全局** once 去重：曾选，但有 bug——`coding/01.md` 和 `review/01.md` 都 `!include` 同一 `shared.md` 时，coding 先展开（seen 记录），review 遇 shared 被 once 跳过 → **review/01.md 的 shared 内容为空**，reviewer 拿不到规则。once 的本意是单文件菱形去重，不是跨文件去重。
-- (c) 循环检测栈 + **per-top-level-file** once 去重：每个 `specpower/custom/{coding,review}/*.md` 顶层文件独立展开（新建 seen/stack），`totalBytes` 全局。shared.md 在 coding/01 和 review/01 各展开一次（两处都完整）。once 仅在单文件菱形内生效（A→B,C; B,C→D，D 在 A 里只展开一次）。
-
-**Chosen:** (c) per-top-level-file once 去重。
-
-**Rationale:** once 的语义边界是"单次展开一棵 include 树"——每个顶层 custom md 是一棵独立的树，各自去重。跨文件/跨 kind 不去重：不同 prompt（implementer vs reviewer）各自需要完整规则，跨文件共享 seen 会导致后展开的文件缺失。`totalBytes` 仍全局（防总量爆）。**故意重复**场景：若团队想强调某规则，应直接在 md 里写内容或用不同文件名，而非 `!include` 同一文件两次（per-file once 会吞掉同一文件内的第二次）——文档（`custom/README.md`）说明此约定。
-
-### D8: 大小/扩展名硬约束 — 限制
+### D5: include-roots defaults — `specpower/` + `docs/` + `arch/` + `design/`
 
 **Options considered:**
-- (a) 不限：include 任意文件。风险——`!include package-lock.json`（MB）或二进制爆 prompt、secrets 进 prompt。
-- (b) 限制：单文件 64KB、总 256KB、扩展名白名单 `.md/.txt/.yaml/.yml/.json`。
+- (a) Default only `specpower/`: `!include docs/x.md` requires config declaration. Extra config step.
+- (b) Default `specpower/` + `docs/`: team can `!include docs/coding-style.md` without declaration. docs/ is the conventional doc dir.
+- (c) Default `specpower/` + `docs/` + `arch/` + `design/`: also arch/ (ADRs), design/ (design docs) — covers the most common project doc dir names.
+- (d) Default more (wiki/, doc/): too speculative, mismatches real layout and misleads.
 
-**Chosen:** (b) 限制。
+**Chosen:** (c) default `specpower/` + `docs/` + `arch/` + `design/`.
 
-**Rationale:** custom 是规则层（文本规则），不是代码/数据引用层。限制防爆 prompt、防二进制、防 secrets（`.env`/`.key` 不在白名单）。白名单优于黑名单（黑名单必漏）。
+**Rationale:** docs/, arch/, design/ are the most common project doc dir conventions; defaulting them lets teams reuse project docs "out of the box". If these dirs don't exist, `!include` degrades... no — fail-fast throws (target missing), user declares actual dirs in config; non-default dirs declared via config. More (wiki/doc) is too speculative.
 
-### D9: sync bake 未执行的兜底 — subagent 自检占位符残留
-
-**Options considered:**
-- (a) 无兜底：若 sync 没跑/烘焙 prompt 占位符失败，prompt 留字面 `[CONTROLLER:` 文本，subagent 行为未定义（可能当规则文本）。
-- (b) subagent 自检占位符残留：占位符段加"若收到的 prompt 含字面 `[CONTROLLER:` 文本（sync bake missing），报告 DONE_WITH_CONCERNS"。让 subagent 把"sync 没烘焙"变显式 concern。
-- (c) controller 预检占位符残留：与 D11 同款，重叠。
-
-**Chosen:** (b) subagent 自检占位符残留。
-
-**Rationale:** (d) 下主路径是 sync 确定性烘焙 prompt 占位符（D1），但若 sync 没跑/烘焙失败，prompt 留字面 `[CONTROLLER:`。D9 给 subagent 检测路径——若收到 prompt 含字面占位符，报告 DONE_WITH_CONCERNS（sync bake missing）。把"sync 没跑/失败"从静默变显式 concern，与"缺失写 none 而非静默"一脉相承。**风险**：D9 依赖 subagent（LLM）遵守"看到字面占位符则报告"指令，非 100% 必然；但这是 best-effort 兜底（主路径 D1 确定性，D9 兜底 sync 失败），与 D11（controller 检测 `!include` 残留）构成双层兜底（D9 subagent 层、D11 controller 层）。
-
-### D10: worktree sync 不 stamp config — 语义"worktree sync 不改 config version"
+### D6: worktree gitignored-asset absence — phase-b-worktree setup runs `specpower sync`
 
 **Options considered:**
-- (a) 现状：worktree sync 正常 `stampVersionInConfig` → 改 worktree 的 `specpower/config.yaml` version 行 → 污染 worktree git diff（config.yaml 进 git）。
-- (b) worktree sync 跳过 stamp：worktree 是临时实现环境，config version 应跟主项目，不需 stamp。
-- (c) stamp 到 worktree-local 不进 git 的 config：多一个 config 副本，复杂。
+- (a) worktree setup copies custom/ (+ prompts/) into the worktree: requires copy logic, and the prompts problem is independent of custom.
+- (b) worktree setup runs `specpower sync` (existing command): reuses existing copy + bake, solving prompts/schemas/templates/custom all at once.
+- (c) controller/subagent use `git rev-parse --git-common-dir/..` to read the main project root: each subagent resolves the main root, fragile.
 
-**Chosen:** (b) worktree sync 跳过 stamp。
+**Chosen:** (b) worktree setup runs `specpower sync`.
 
-**Rationale:** worktree 是为 build Phase B 实现隔离的临时环境，其 `config.yaml` 是主项目 config 的 git 跟踪副本。sync 在 worktree 跑只为重新生成 gitignored 资产（prompts/custom 等），不该改 config 的 version 行（那会污染 worktree 的 git diff，与实现改动混在一起）。**实现路径（build Phase A 选一）**：(i) phase-b-worktree 跑 sync 后 `git checkout -- specpower/config.yaml` 还原 version 行；(ii) sync 加 `--no-stamp` flag，phase-b-worktree 调 `specpower sync --no-stamp`；(iii) sync 内检测 worktree（`git rev-parse --git-common-dir` 与 `--show-toplevel` 不一致）自动跳过 stamp。refine 先定语义"worktree sync 不 stamp config"。
+**Rationale:** sync is the existing "copy gitignored assets to the cwd project" mechanism; running it in the worktree brings all assets (incl. baked custom) into the worktree. No new command, no new copy logic, inline/worktree behavior consistent (both read cwd-relative `specpower/custom/`). Guard: runs only if `specpower/config.yaml` exists + `specpower` on PATH, else silent skip (non-specpower project or CLI not installed doesn't error).
 
-### D11: custom 过期检测 — build 前检查 `!include` 残留
+### D7: cycle/diamond semantics — cycle-detection stack + per-top-level-file once dedup
 
 **Options considered:**
-- (a) 现状：无检测。custom md 可能含上次烘焙的过期文本（团队改了包源 `!include` 但消费项目没 sync）。
-- (b) build 前 controller 检查 `!include` 残留：若 `specpower/custom/` md 仍含 `!include` 字样（说明上次 sync 未烘焙/失败/未跑），controller 警告"run specpower sync"。
-- (c) config stamp custom 烘焙版本，build 比对版本：重，多一个版本字段。
+- (a) Cycle detection + every-expansion (diamond/cross-file duplicates): simple. But rule-doc content duplicates.
+- (b) Cycle-detection stack + **global** once dedup: was chosen, but has a bug — `coding/01.md` and `review/01.md` both `!include shared.md`: coding expands first (seen records), review hits shared → once skips → **review/01.md's shared content is empty**, reviewer gets no rules. Once means single-file diamond dedup, not cross-file.
+- (c) Cycle-detection stack + **per-top-level-file** once dedup: each `specpower/custom/{coding,review}/*.md` top-level file expands independently (new seen/stack), `totalBytes` global. shared.md expands in coding/01 and review/01 each (both complete). Once only within a single file's diamond (A→B,C; B,C→D, D expands once in A).
 
-**Chosen:** (b) build 前检查 `!include` 残留。
+**Chosen:** (c) per-top-level-file once dedup.
 
-**Rationale:** (d) 下主路径是 sync 烘焙（先 `!include` 烘焙 custom，再烘焙 custom 进 prompt 占位符），但若用户改了包源 custom 后没 sync 项目，controller build 前检测 `specpower/custom/` md 含 `!include` 残留（说明 custom `!include` 烘焙没跑/失败）→ 警告 run sync。D4 全抛错下，成功 sync 的 custom 无 `!include` 残留（失败则抛错中断，不产生降级注释），残留 = 未 sync，是明确信号。cheap 检查，把"忘了 sync"从静默（用过期烘焙文本）变可见。与 D9 构成双层兜底（D9 subagent 层检测 prompt 占位符残留、D11 controller 层检测 custom `!include` 残留）。
+**Rationale:** The once semantic boundary is "one expansion of an include tree" — each top-level custom md is an independent tree, deduped per tree. Cross-file/cross-kind is NOT deduped: different prompts (implementer vs reviewer) each need complete rules; cross-file shared seen starves later-expanded files. `totalBytes` stays global (total cap). **Intentional repeat:** if a team wants to emphasize a rule, write the content directly in the md or use a different filename, not `!include` the same file twice (per-file once swallows the second within one file) — documented in `custom/README.md`.
+
+### D8: size/extension hard limits — limited
+
+**Options considered:**
+- (a) No limits: include any file. Risk — `!include package-lock.json` (MB) or binary blows the prompt, secrets enter the prompt.
+- (b) Limited: per-file 64KB, total 256KB, extension whitelist `.md/.txt/.yaml/.yml/.json`.
+
+**Chosen:** (b) limited.
+
+**Rationale:** custom is a rule layer (text rules), not a code/data reference layer. Limits prevent prompt blowups, binaries, secrets (`.env`/`.key` not whitelisted). Whitelist > blacklist (blacklist inevitably misses).
+
+### D9: sync-bake-not-run fallback — subagent self-check for placeholder residue
+
+**Options considered:**
+- (a) No fallback: if sync didn't run / prompt-placeholder bake failed, prompt leaves literal `[CONTROLLER:` text, subagent behavior undefined (may treat as a rule).
+- (b) Subagent self-check for placeholder residue: placeholder section adds "if the prompt you receive contains literal `[CONTROLLER:` text (sync bake missing), report DONE_WITH_CONCERNS". Makes "sync didn't bake" an explicit concern.
+- (c) Controller pre-check for placeholder residue: same as D11, overlaps.
+
+**Chosen:** (b) subagent self-check.
+
+**Rationale:** (d) main path is sync deterministic bake (D1), but if sync didn't run / bake failed, prompt leaves literal `[CONTROLLER:`. D9 gives the subagent a detection path — if the received prompt contains a literal placeholder, report DONE_WITH_CONCERNS (sync bake missing). Turns "sync didn't run / failed" from silent to explicit concern, consistent with "missing writes `none`, not silent". **Risk:** D9 depends on the subagent (LLM) obeying "see literal placeholder → report", not 100% certain; but it's best-effort fallback (D1 main path deterministic, D9 covers sync failure), and with D11 (controller detects `!include` residue) forms a two-layer fallback (D9 subagent layer, D11 controller layer).
+
+### D10: worktree sync skips stamp config — semantic "worktree sync doesn't change config version"
+
+**Options considered:**
+- (a) Status quo: worktree sync normally `stampVersionInConfig` → changes the worktree's `specpower/config.yaml` version line → pollutes the worktree git diff (config.yaml is tracked).
+- (b) worktree sync skips stamp: worktree is a transient implementation env, config version should track the main project, no stamp needed.
+- (c) Stamp to a worktree-local, non-tracked config: extra config copy, complex.
+
+**Chosen:** (b) worktree sync skips stamp.
+
+**Rationale:** worktree is a transient isolation env for build Phase B implementation; its `config.yaml` is a tracked copy of the main project's config. sync in a worktree only re-generates gitignored assets (prompts/custom etc.), it should not change config's version line (that would pollute the worktree's git diff, mixing with implementation changes). **Implementation path (build Phase A choice — chose iii):** sync auto-detects worktree (`git rev-parse --git-common-dir` vs `--show-toplevel` mismatch → skip stamp), transparent to phase-b-worktree and other worktree scenarios.
+
+### D11: custom-staleness detection — pre-build `!include` residue check
+
+**Options considered:**
+- (a) Status quo: no detection. custom md may hold stale baked text from last sync (team changed package-root `!include` but consumer didn't sync).
+- (b) **Pre-build `!include` residue check:** if `specpower/custom/` md still contains `!include` directive lines (last bake didn't complete / never ran), controller warns "run `specpower sync`".
+- (c) config stamps custom bake version, build compares versions: heavy, extra version field.
+
+**Chosen:** (b) pre-build `!include` residue check.
+
+**Rationale:** (d) main path is sync bake (first `!include`-bakes custom, then bakes custom into prompt placeholders), but if the user changed package-root custom and didn't sync the project, controller pre-build checks `specpower/custom/` md for `!include` residue (means custom `!include` bake didn't run / failed) → warn sync. Under D4 fail-fast, a successful sync's custom has no `!include` residue (failure throws + aborts, no degraded comments), so residue = not synced — a clear signal. Cheap check, turns "forgot sync" from silent (using stale baked text) to visible. With D9 forms a two-layer fallback (D9 subagent layer detects prompt placeholder residue, D11 controller layer detects custom `!include` residue).
+
+### D12: wildcard `!include` — glob directory expansion
+
+**Options considered:**
+- (a) Single-file only: `!include docs/rules/01-x.md`, must list each file. Tedious when a dir has many rules.
+- (b) Wildcard `!include docs/rules/*.md`: expand all matching files in the dir (lexicographic, extension-whitelisted, recursive). `*` matches non-`/`, `?` matches single non-`/`.
+- (c) Full glob (minimatch): too powerful, security/ordering complexity.
+
+**Chosen:** (b) simple wildcard `*`/`?`.
+
+**Rationale:** Listing every rule file is tedious and order-fragile (forget one, misorder). Wildcard `*.md` over a rules dir is the natural fit — "include all rules here, in deterministic order". Kept simple (`*`/`?` non-`/`) to avoid minimatch's complexity/security surface. Matched files sorted lexicographically (zero-padded numeric prefixes control precedence), extension-whitelisted, recursively expanded. No matches / dir missing / out-of-sandbox all throw (fail-fast, consistent with D4).
 
 ## 4. Risks / Trade-offs
 
-- **sync 烘焙 4 处映射维护**：(d) sync 烘焙要硬编码 prompt-占位符 ↔ custom 映射（coding→`implementer-prompt.md`+`receiving-code-review.md`；review→`code-reviewer-prompt.md`+`code-review.md`）。新增/改名 prompt 占位符时映射要同步更新。缓解：映射集中在一处（`custom-bake.ts` 常量），测试覆盖 4 处。
-- **烘焙在 sync，custom/项目文档变更需 re-sync（snapshot 约束）**：sync 烘焙是快照——团队改包源 `custom/` 的 `!include` 或项目被 include 的文档（如 `docs/rules/`）变更后，消费项目要 re-sync 才进 prompt。缓解：sync 是 specpower 标准刷新流程；`custom/README.md` 明确 snapshot 约束；D11 检测 `!include` 残留（sync 没跑/失败）兜底，D9 检测 prompt 占位符残留（sync bake 失败）兜底。
-- **default include-roots 假设**：默认含 `specpower/+docs/+arch/+design/` 是约定，非所有项目用这些目录名。缓解：这些目录不存在时 `!include` 抛错（fail-fast，target missing），用户改 config 声明实际目录；非 default 目录由 config 声明。
-- **`specpower/custom/` 与 prompt 副本烘焙改了 gitignored 副本**：烘焙写回 `specpower/custom/`（`!include` 展开）+ prompt 副本（占位符替换），都是 gitignored 可再生副本，不碰包根源。但若用户直接改项目 `specpower/custom/`（违背"项目不自写"）会被下次 sync 覆盖。缓解：文档强调 `specpower/custom/` 是镜像、`!include` 写在包源；项目级定制通过团队约定项目目录（如 `docs/rules/`）+ `!include` 而非写 `specpower/custom/`。
+- **sync-bake 4-mapping maintenance:** (d) sync-bake hardcodes the prompt-placeholder ↔ custom mapping (coding→`implementer-prompt.md`+`receiving-code-review.md`; review→`code-reviewer-prompt.md`+`code-review.md`). Adding/renaming a prompt placeholder requires updating the mapping. Mitigation: mapping centralized in one place (`custom-bake.ts` constant `PROMPT_PLACEHOLDER_MAP`), tests cover the 4 entries.
+- **bake at sync, custom/project-doc changes require re-sync (snapshot constraint):** sync bake is a point-in-time snapshot — after sync, if the team changes package-root `custom/` `!include`s or an included project doc (e.g. `docs/rules/`) changes, the consumer must re-sync to propagate. Mitigation: sync is the standard specpower refresh flow; `custom/README.md` states the snapshot constraint; D11 detects `!include` residue (sync didn't run / failed), D9 detects prompt-placeholder residue (sync bake failed).
+- **default include-roots assumption:** defaulting `specpower/+docs/+arch/+design/` is convention, not all projects use these dir names. Mitigation: if these dirs don't exist, `!include` throws (fail-fast, target missing), user declares actual dirs in config; non-default dirs declared via config.
+- **`specpower/custom/` and prompt-copy baking touch gitignored copies:** bake writes back `specpower/custom/` (`!include` expansion) + prompt copies (placeholder replacement), both gitignored regeneratable copies, not touching package-root source. But if a user directly edits project `specpower/custom/` (violating "project doesn't self-author") it's overwritten on next sync. Mitigation: docs emphasize `specpower/custom/` is a mirror, `!include` is authored in package-root; project-level customization uses team-conventioned project dirs (e.g. `docs/rules/`) + `!include`, not writing `specpower/custom/`.
 
 ## 5. Migration Plan
 
-非完全 greenfield——`customization-layer` change 已交付原始机制（subagent 自读），A 阶段已改为 controller 内联 + include（代码已实现）。本 change 是 spec 修订（让 specs 反映 controller 内联 + include 的既成事实）+ `include-roots` 默认加 `docs/` 的代码调整。
+Not fully greenfield — the `customization-layer` change shipped the original mechanism (subagent self-read), A-stage already changed to sync-bake + `!include` (code implemented). This change is the spec revision (making specs reflect sync-bake + `!include` as-built) + the `include-roots` default `docs/`/`arch/`/`design/` code adjustment.
 
-- 现有 `specpower/custom/` 无 `!include` 的项目：烘焙原样保留，无行为变化。
-- `include-roots` 默认加 `docs/`：之前 config 未声明 roots 的项目，`!include docs/x.md` 从越界降级变为展开成功（若 docs/x.md 存在）。这是行为改进，不破坏。
-- `customization-layer` change 的 delta specs 仍写"subagent 自读"，与本 change 冲突——归档顺序需先归档 `customization-layer`（原始），再归档 `custom-overlay-v2`（MODIFIED 改成 controller 内联），或废弃 `customization-layer` 合并到 `custom-overlay-v2`。`/specpower:done` 阶段决定。
+- Existing `specpower/custom/` projects without `!include`: bake passes through unchanged, no behavior change.
+- `include-roots` default adds `docs/`/`arch/`/`design/`: previously config-undeclared projects' `!include docs/x.md` goes from out-of-sandbox throw to expand-success (if `docs/x.md` exists). Behavior improvement, not breaking.
+- `customization-layer` change (phase=built, original subagent-read specs) conflicted with this change — archive order: `customization-layer` was discarded (artifacts stale vs code), `custom-overlay-v2` is ADDED (main empty, this change first introduces these capabilities), the sole change. Resolved.
 
 ## 6. Open Questions
 
-- ~~归档顺序~~（已解决）：废弃 `customization-layer` change（artifacts 落后代码、phase=built 但脱节），`custom-overlay-v2` 的 3 个 specs 全部 ADDED（main 空，本 change 首个引入这些 capability），成为唯一 change。
-- `include-roots` 默认是否还应含 `arch/` 等其它约定目录，还是只 `docs/`？当前定 `docs/`，refine 可讨论。
-- D10 worktree-sync-不-stamp 的实现路径（git checkout 还原 / `--no-stamp` flag / 自动检测 worktree）defer 到 build Phase A。
+- ~~Archive order~~ (resolved): discarded `customization-layer` change (artifacts stale vs code, phase=built but disconnected), `custom-overlay-v2`'s 3 specs are all ADDED (main empty, this change first introduces these capabilities), the sole change.
+- `include-roots` default — should it also include `arch/` etc., or just `docs/`? Now `docs/`+`arch/`+`design/` (resolved).
+- D10 worktree-sync-no-stamp implementation path — resolved: (iii) auto-detect worktree (`git rev-parse --git-common-dir` vs `--show-toplevel` mismatch).
