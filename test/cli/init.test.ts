@@ -174,6 +174,22 @@ describe('initProject', () => {
     const configContent = await fs.readFile(configPath, 'utf-8');
     expect(configContent).toContain('marker: original');
   });
+
+  it('init copies package-root custom/ to <projectRoot>/specpower/custom/ and gitignores it', async () => {
+    await initProject(tmpDir, PACKAGE_ROOT);
+
+    const customDir = join(tmpDir, 'specpower', 'custom');
+    expect((await fs.stat(join(customDir, 'README.md'))).isFile()).toBe(true);
+    expect(
+      (await fs.stat(join(customDir, 'coding', 'coding-standards.md'))).isFile(),
+    ).toBe(true);
+    expect(
+      (await fs.stat(join(customDir, 'review', 'review-rules.md'))).isFile(),
+    ).toBe(true);
+
+    const gi = await fs.readFile(join(tmpDir, '.gitignore'), 'utf-8');
+    expect(gi).toContain('specpower/custom/');
+  });
 });
 
 describe('initProject version stamping & drift handling', () => {

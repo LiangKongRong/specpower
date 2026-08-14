@@ -329,7 +329,7 @@ specpower init
 
 | 命令 | 说明 |
 |---|---|
-| `specpower init` | 初始化项目（生成目录、技能、prompts） |
+| `specpower init` | 初始化项目（生成目录、技能、prompts、custom 团队规则） |
 | `specpower change new <名称>` | 创建新的变更 |
 | `specpower change status <名称>` | 查看变更的 artifact 完成状态 |
 | `specpower change archive <名称>` | 归档变更（delta merge + 移入 archive） |
@@ -337,6 +337,62 @@ specpower init
 | `specpower instructions <artifact> <change>` | 查看某个 artifact 的创建指令 |
 
 CLI 命令会从当前目录**向上查找**项目根（找 `specpower/config.yaml`），类似 `git` 的行为。在项目任意子目录下运行都能工作。
+
+### 项目定制层（公司/工程定制规则）
+
+各公司、各工程都有自己的定制规则。specpower 把它们分两处放，由团队统一制作后随包分发到各项目，贯彻团队意志——项目不自写、随版本刷新。
+
+- `custom/coding/` —— **生成代码**时读（`/specpower:build` implementer、`/specpower:fix`）：命名、架构、错误处理、测试规范等"写代码要遵守"的规则
+- `custom/review/` —— **检视代码**时读（`/specpower:review`）：必须项、禁用项、风格等"检视者要标记"的规则
+
+两处都可放任意数量 `.md` 文件，目录里所有**顶层** `.md`（忽略子目录和非 `.md`）按**字典序**依次读取应用；用零填充数字前缀（`01-`、`02-`、`10-`）控制顺序（字典序下 `10-` 排在 `2-` 前，须零填充保自然数序）。每条规则可标严重度 `[Critical]` / `[Important]` / `[Minor]`（默认 Important）。
+
+作为**叠加层**——额外维度，叠加在内置 checklist 之上，不替换；项目约定类冲突 custom 优先，安全/正确性内置恒生效；目录空/不存在则行为不变（零破坏性）。
+
+#### 如何做团队定制
+
+1. **团队 fork specpower**（或维护团队定制包源）
+2. 在包根 `custom/coding/` 放生成侧规则 `.md`，在 `custom/review/` 放检视侧规则 `.md`。示例（`custom/review/01-naming.md`）：
+
+   ````markdown
+   ## Naming
+   - [Critical] All functions MUST use camelCase
+   - [Important] TypeScript interfaces MUST be prefixed with `I`
+   ````
+
+3. 发布团队定制包（`npm publish` 或团队 git 仓库）
+
+#### 项目如何消费
+
+1. 项目安装团队定制包：`npm install -g specpower`（团队版本）
+2. 首次 `specpower init`，或升级时 `specpower sync`——把包根 `custom/` 刷到项目 `specpower/custom/`
+3. 团队发新版本后，项目 `npm install -g specpower@latest` + `specpower sync` 刷新
+
+项目 `specpower/custom/` 被 `.gitignore` 忽略、不进 git、随 sync 刷新——项目不自写。
+
+#### 定制如何生效
+
+```
+团队包根 custom/{coding,review}/
+  ↓ npm 发布 / 团队包
+项目安装
+  ↓ specpower init / sync  （copyCustom 清空再拷镜像包根）
+项目 specpower/custom/{coding,review}/   （.gitignore 忽略，不进 git）
+  ↓ /specpower:review / build / fix
+controller dispatch 前 Read custom → 内联进 subagent prompt 占位符
+```
+
+- `specpower init`/`sync` 的 `copyCustom` 把包根 `custom/` **清空再拷**到项目 `specpower/custom/`（镜像包根，团队删的规则项目里不残留）；`.gitignore` 忽略 `specpower/custom/`
+- **controller 内联**（非 subagent 自读）：4 个 prompt 的守卫段是 `[CONTROLLER: ...]` 占位符。controller 在 dispatch implementer/reviewer **之前**，读 `specpower/custom/{coding,review}/` 所有顶层 `.md`（字典序），把拼接文本填进占位符；目录空/不存在则填 `none`（显式缺失，不静默跳过）。规则物理进 subagent prompt 文本，必然被执行——不依赖 subagent 主动 Read，也符合 subagent-driven-development 的"provide full text, never make subagent read files"原则
+- **custom md 可复用项目文档**：custom 的 `.md` 支持 `!include <rel-from-project-root>` 整行指令，引用 `docs/`、`arch/` 等既有文档而不复制。`!include` 在 init/sync **烘焙时递归展开成纯文本**（原地写回 specpower/custom/），controller 读到的是展开后文本、不感知 include；沙箱由 `specpower/config.yaml` 的 `custom.include-roots` 声明（`specpower/` 恒允许），配循环检测/深度上限/once 去重/大小与扩展名硬约束。target 缺失或越界**降级为可见注释**（不中断 init/sync，内容不泄露——首次 init 时 config.yaml 还是骨架、roots 未声明）；循环/超限/坏扩展名/绝对路径/目录是结构错误，**抛错中断**（详见 `custom/README.md`）
+
+  | controller 内联点 | 读取的定制目录 |
+  |---|---|
+  | `/specpower:review` dispatch reviewer 前 | `specpower/custom/review/` |
+  | `/specpower:build` dispatch implementer 前、`/specpower:fix` | `specpower/custom/coding/` |
+
+- **worktree 模式**：`specpower/custom/` 与 `.claude/specpower/prompts/` 等被 `.gitignore` 忽略，git worktree 默认不含。`phase-b-worktree` 的 setup 步骤会在 worktree 内跑一次 `specpower sync`（若 `specpower/config.yaml` 存在），把这些 gitignored 资产重新生成到 worktree，使相对路径 `specpower/custom/` 在 worktree cwd 仍可达
+- 路径 `specpower/custom/` 相对项目 cwd，所有 AI 工具（claude/opencode/cac/chrys）一致读取、不被重写
 
 ---
 

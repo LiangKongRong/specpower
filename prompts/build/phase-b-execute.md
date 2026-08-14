@@ -122,6 +122,26 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 - Read `.claude/specpower/prompts/shared/spec-reviewer-prompt.md` - Dispatch spec compliance reviewer subagent
 - Read `.claude/specpower/prompts/shared/code-reviewer-prompt.md` - Dispatch code quality reviewer subagent
 
+### Before dispatching any subagent: custom rules are sync-baked (no runtime fill)
+
+Custom rules are NOT read or filled by the controller at runtime — they are
+baked into the prompt-file placeholders at `specpower init`/`sync` time by
+`bakeCustomIncludes` → `bakePrompts` (see `src/cli/commands/custom-bake.ts`).
+The implementer prompt's `Project Coding Standards` placeholder is already
+replaced with the concatenated contents of `specpower/custom/coding/` (or
+`none` if empty/missing). The controller just reads the baked prompt and
+dispatches — no custom read, no placeholder fill. (In a worktree,
+`phase-b-worktree.md` setup runs `specpower sync` to regenerate the baked
+prompt.)
+
+**D11 residue check (REQUIRED before dispatch):** if any
+`specpower/custom/coding/*.md` still contains an unresolved `!include`
+directive line (the previous bake did not complete or was never run — under
+the fail-fast policy a successful bake leaves no `!include` lines), warn the
+user to run `specpower sync` before proceeding. Do not silently proceed with
+stale/unbaked rules. (A baked `none` or rule text is fine; only a literal
+`!include` directive line indicates an unbaked file.)
+
 ## Example Workflow
 
 ```

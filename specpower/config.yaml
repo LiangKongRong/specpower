@@ -1,0 +1,7 @@
+schema: specpower
+version: 0.2.3-3
+
+# Project context (customize for your project)
+# context: |
+#   Tech stack: ...
+#   Architecture: ...

@@ -66,6 +66,20 @@ Task tool (general-purpose):
     - Implementation matches spec?
     - No scope creep?
 
+    **Custom Standards (sync-baked):**
+    The placeholder below is replaced at `specpower init`/`sync` time with the
+    concatenated contents of `specpower/custom/review/` top-level .md
+    (lexicographic; subdirectories and non-.md ignored). If missing or empty,
+    it reads `none`. Do NOT read custom files at runtime — they are inlined here.
+    [CONTROLLER: paste review rules here]
+    Custom conventions override built-in style guidance; built-in
+    safety/correctness checks always apply. Flag violations at the severity
+    each rule specifies (default Important).
+
+    **D9 self-check:** If you see the literal `[CONTROLLER:` text still in this
+    prompt (sync bake missing/failed), report DONE_WITH_CONCERNS — do not treat
+    it as a rule, and do not silently proceed as if rules were absent.
+
     ## Output Format
 
     ### Strengths

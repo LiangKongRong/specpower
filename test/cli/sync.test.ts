@@ -3,7 +3,7 @@ import { promises as fs, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { syncAssets } from '../../src/cli/commands/sync.js';
+import { syncAssets, isInsideWorktree } from '../../src/cli/commands/sync.js';
 import { initProject, readStoredVersion, readPackageVersion } from '../../src/cli/commands/init.js';
 
 const PACKAGE_ROOT = resolve(import.meta.dirname, '..', '..');
@@ -26,6 +26,25 @@ function syncUserInFakeHome(fakeHome: string): void {
   if (result.status !== 0) {
     throw new Error(`sync --user failed: ${result.stderr}`);
   }
+}
+
+/**
+ * Thin wrapper around `git` for the worktree test fixture: runs the args in
+ * `cwd`, pipes stdio to keep stderr out of the test output, and throws on
+ * non-zero exit so setup failures surface clearly.
+ */
+function git(args: string[], cwd: string): string {
+  const r = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf-8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  if (r.status !== 0) {
+    throw new Error(
+      `git ${args.join(' ')} failed in ${cwd}: ${(r.stderr || r.stdout).trim()}`,
+    );
+  }
+  return (r.stdout || '').trim();
 }
 
 describe('syncAssets (project scope, model C)', () => {
@@ -157,6 +176,25 @@ describe('syncAssets (project scope, model C)', () => {
     await syncAssets({ projectRoot: tmpDir });
     await expect(fs.stat(join(tmpDir, 'specpower', 'config.yaml'))).rejects.toThrow();
   });
+
+  it('sync refreshes <projectRoot>/specpower/custom/ via clear-then-copy', async () => {
+    await syncAssets({ projectRoot: tmpDir });
+    const customDir = join(tmpDir, 'specpower', 'custom');
+    expect((await fs.stat(join(customDir, 'README.md'))).isFile()).toBe(true);
+
+    // a file not in the package root should be cleared on re-sync
+    await fs.mkdir(join(customDir, 'review'), { recursive: true });
+    await fs.writeFile(join(customDir, 'review', 'stale.md'), 'x', 'utf-8');
+
+    await syncAssets({ projectRoot: tmpDir });
+
+    await expect(
+      fs.stat(join(customDir, 'review', 'stale.md')),
+    ).rejects.toThrow();
+    expect(
+      (await fs.stat(join(customDir, 'review', 'review-rules.md'))).isFile(),
+    ).toBe(true);
+  });
 });
 
 describe('syncAssets (user scope, model B)', () => {
@@ -221,6 +259,89 @@ describe('syncAssets (user scope, model B)', () => {
       (e) => e.startsWith('specpower-'),
     );
     expect(skillDirs).toHaveLength(10);
+  });
+
+  it('user scope does not distribute custom/ and cleanStale does not touch project custom/', async () => {
+    const tmpProject = await fs.mkdtemp(join(tmpdir(), 'specpower-usercustom-'));
+    try {
+      // pre-create project specpower/custom/ (simulating prior project-scope sync)
+      await fs.mkdir(join(tmpProject, 'specpower', 'custom', 'review'), { recursive: true });
+      await fs.writeFile(join(tmpProject, 'specpower', 'custom', 'review', 'keep.md'), 'x', 'utf-8');
+
+      const result = await syncAssets({ user: true, projectRoot: tmpProject });
+      expect(result.refreshed).not.toContain('custom');
+      // user scope did not create specpower/custom/ in project, nor delete the pre-existing one
+      expect(await fs.readFile(join(tmpProject, 'specpower', 'custom', 'review', 'keep.md'), 'utf-8')).toBe('x');
+    } finally {
+      await fs.rm(tmpProject, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('syncAssets in a git worktree', () => {
+  let repoDir: string;
+  let worktreeDir: string;
+
+  beforeEach(async () => {
+    repoDir = await fs.mkdtemp(join(tmpdir(), 'specpower-wt-repo-'));
+    // bootstrap a throwaway git repo with a committed specpower/config.yaml
+    git(['init'], repoDir);
+    git(['config', 'user.email', 'test@example.com'], repoDir);
+    git(['config', 'user.name', 'Specpower Test'], repoDir);
+    await fs.mkdir(join(repoDir, 'specpower'), { recursive: true });
+    await fs.writeFile(
+      join(repoDir, 'specpower', 'config.yaml'),
+      'version: 0.0.1\n# Project context\n',
+      'utf-8',
+    );
+    git(['add', '.'], repoDir);
+    git(['commit', '-m', 'init'], repoDir);
+    // carve out a linked worktree off the main repo
+    worktreeDir = join(repoDir, 'wt');
+    git(['worktree', 'add', worktreeDir], repoDir);
+  });
+
+  afterEach(async () => {
+    // drop the worktree first so the repo dir is removable on Windows
+    try {
+      git(['worktree', 'remove', '--force', worktreeDir], repoDir);
+    } catch {
+      // ignore — worktree may already be gone
+    }
+    await fs.rm(repoDir, { recursive: true, force: true });
+  });
+
+  it('isInsideWorktree returns true for a path inside a linked worktree', () => {
+    expect(isInsideWorktree(worktreeDir)).toBe(true);
+  });
+
+  it('isInsideWorktree returns false for a plain non-repo directory', async () => {
+    const plain = await fs.mkdtemp(join(tmpdir(), 'specpower-nowt-'));
+    try {
+      expect(isInsideWorktree(plain)).toBe(false);
+    } finally {
+      await fs.rm(plain, { recursive: true, force: true });
+    }
+  });
+
+  it('does NOT stamp config.yaml version when syncing inside a worktree', async () => {
+    // syncAssets runs copyCustom + bake; if it also stamped, the committed
+    // config.yaml would gain a modified `version:` line.
+    await syncAssets({ projectRoot: worktreeDir });
+
+    const cfg = await fs.readFile(
+      join(worktreeDir, 'specpower', 'config.yaml'),
+      'utf-8',
+    );
+    expect(cfg).toMatch(/^version: 0\.0\.1$/m);
+
+    // `git diff --exit-code` = 0 means no tracked changes to config.yaml
+    const r = spawnSync(
+      'git',
+      ['-C', worktreeDir, 'diff', '--exit-code', '--', 'specpower/config.yaml'],
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+    );
+    expect(r.status).toBe(0);
   });
 });
 
