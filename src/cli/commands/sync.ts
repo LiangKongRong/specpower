@@ -24,7 +24,8 @@
  */
 
 import { promises as fs } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
+import { execSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import {
@@ -33,10 +34,12 @@ import {
   copyPrompts,
   copySchemas,
   copyTemplates,
+  copyCustom,
   findPackageRoot,
   readPackageVersion,
   stampVersionInConfig,
 } from './init.js';
+import { bakeCustomIncludes } from './custom-bake.js';
 import type { ToolAdapter, ToolId } from '../../core/tools/types.js';
 import { resolveTool, maybeToolHint } from '../../core/tools/adapters.js';
 
@@ -73,6 +76,40 @@ export interface SyncResult {
 }
 
 const SPECPOWER_SKILL_PREFIX = 'specpower-';
+
+/**
+ * Detects whether `cwd` lives inside a **linked** git worktree (rather than
+ * the repo's own working copy). In a linked worktree, `git rev-parse
+ * --git-common-dir` points at the main repo's `.git`, whose parent differs
+ * from `--show-toplevel` (the worktree root). In the main repo the two
+ * resolve to the same directory; outside any repo git fails and we return
+ * false.
+ *
+ * Used by {@link syncAssets} to skip {@link stampVersionInConfig} when run
+ * inside a worktree — otherwise the stamp would mutate the worktree's
+ * tracked `specpower/config.yaml`, polluting `git diff`/PR noise. The
+ * version is reconciled when sync runs against the main checkout instead.
+ *
+ * @param cwd - Directory to probe. Defaults to `process.cwd()`.
+ */
+export function isInsideWorktree(cwd: string = process.cwd()): boolean {
+  try {
+    const run = (args: string[]) =>
+      execSync(`git ${args.join(' ')}`, {
+        cwd,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+    const common = run(['rev-parse', '--git-common-dir']);
+    const toplevel = run(['rev-parse', '--show-toplevel']);
+    if (!common || !toplevel) return false;
+    // `--git-common-dir` may be relative (e.g. `.git`) — resolve against cwd
+    // before taking the parent so the comparison is absolute-path-stable.
+    return dirname(resolve(cwd, common)) !== toplevel;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * The set of skill dir names the current version ships, e.g. `specpower-plan`.
@@ -192,12 +229,22 @@ export async function syncAssets(
     await copyPrompts(toolRoot, packageRoot);
     await copySchemas(toolRoot, packageRoot);
     await copyTemplates(toolRoot, packageRoot);
-    refreshed.push('prompts', 'schemas', 'templates');
+    await copyCustom(projectRoot, packageRoot);
+    // Expand `!include` directives in custom rule files into literal text,
+    // right after copyCustom copies the package-root custom/ in place.
+    await bakeCustomIncludes(projectRoot);
+    refreshed.push('prompts', 'schemas', 'templates', 'custom');
 
     // Stamp the installed version into config.yaml so a later `specpower init`
     // sees `equal` instead of re-offering to sync the (now-current) assets.
     // Surgical: only the `version:` line is touched, preserving comments.
-    await stampVersionInConfig(projectRoot, readPackageVersion(packageRoot));
+    //
+    // Skip the stamp inside a linked git worktree: mutating the worktree's
+    // tracked config.yaml would pollute `git diff`/PR noise, and the version
+    // is reconciled the next time sync runs against the main checkout.
+    if (!isInsideWorktree(projectRoot)) {
+      await stampVersionInConfig(projectRoot, readPackageVersion(packageRoot));
+    }
   }
 
   return {

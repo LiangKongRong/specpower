@@ -1,6 +1,6 @@
 {
   "name": "specpower",
-  "version": "0.2.3-3",
+  "version": "0.2.3-5",
   "type": "module",
   "description": "Unified spec-driven development for Claude Code: OpenSpec planning + Superpowers execution merged into one CLI + plugin",
   "keywords": [
@@ -39,7 +39,8 @@
     "skills",
     "prompts",
     "schemas",
-    "templates"
+    "templates",
+    "custom"
   ],
   "scripts": {
     "build": "tsc",

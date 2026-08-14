@@ -161,6 +161,22 @@ describe('transformSkill', () => {
     );
     expect(out).toContain('Read the file at');
   });
+
+  it('does NOT rewrite specpower/custom/ refs (custom is project-cwd-relative, tool-agnostic)', () => {
+    // custom refs use project-cwd-relative `specpower/custom/` (no .claude/ prefix),
+    // so rewritePromptRefs (which only matches .claude/specpower/prompts/) leaves them
+    // alone across all adapters and scopes — the load-bearing D10 property.
+    const SRC =
+      'Read `specpower/custom/review/` and `specpower/custom/coding/`, plus `.claude/specpower/prompts/review/`';
+    for (const id of ['claude', 'cac', 'chrys', 'opencode'] as const) {
+      const projOut = getToolAdapter(id).transformSkill(SRC, meta('plan'), projectCtx());
+      expect(projOut).toContain('specpower/custom/review/');
+      expect(projOut).toContain('specpower/custom/coding/');
+      const userOut = getToolAdapter(id).transformSkill(SRC, meta('plan'), userCtx());
+      expect(userOut).toContain('specpower/custom/review/');
+      expect(userOut).toContain('specpower/custom/coding/');
+    }
+  });
 });
 
 describe('resolveTool', () => {
