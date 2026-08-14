@@ -15,6 +15,7 @@ import type { Command } from 'commander';
 import { compareVersions } from '../../utils/version.js';
 import type { ToolAdapter, SkillMeta, TransformCtx } from '../../core/tools/types.js';
 import { resolveTool, maybeToolHint } from '../../core/tools/adapters.js';
+import { bakeCustomIncludes } from './custom-bake.js';
 
 /**
  * How the installed package version relates to the version recorded in a
@@ -115,6 +116,13 @@ version: ${version}
 # context: |
 #   Tech stack: ...
 #   Architecture: ...
+
+# Custom rule includes: directories whose files may be referenced from
+# custom/{coding,review}/*.md via \`!include <rel-from-project-root>\`.
+# Default (always allowed, no config needed): specpower/ + docs/ + arch/ + design/
+# Add more project doc dirs here (e.g. wiki/):
+# custom:
+#   include-roots: [wiki/]
 `;
 }
 
@@ -198,6 +206,21 @@ export async function copyDirRecursive(src: string, dest: string): Promise<void>
       }
     }),
   );
+}
+
+/**
+ * Copies the package-root `custom/` directory to `<projectRoot>/specpower/custom/`
+ * (project scope). Clears the destination first so the result mirrors the
+ * package root (rule files removed upstream do not linger). Exported for reuse
+ * by `specpower sync`.
+ */
+export async function copyCustom(
+  projectRoot: string,
+  packageRoot: string,
+): Promise<void> {
+  const dest = join(projectRoot, 'specpower', 'custom');
+  await fs.rm(dest, { recursive: true, force: true });
+  await copyDirRecursive(join(packageRoot, 'custom'), dest);
 }
 
 /**
@@ -529,7 +552,12 @@ export async function initProject(
     copyPrompts(toolRoot, packageRoot),
     copySchemas(toolRoot, packageRoot),
     copyTemplates(toolRoot, packageRoot),
+    copyCustom(projectRoot, packageRoot),
   ]);
+
+  // Expand `!include` directives in custom rule files into literal text.
+  // Runs after copyCustom so the freshly-copied custom/ is the one we bake.
+  await bakeCustomIncludes(projectRoot);
 
   await updateGitignore(projectRoot, tool.rootDir);
 
@@ -623,14 +651,7 @@ async function updateGitignore(
   const gitignorePath = join(projectRoot, '.gitignore');
   const markerStart = '# Added by specpower init (regeneratable assets)';
   const markerEnd = '# End specpower init';
-  const block = [
-    markerStart,
-    `${rootDir}/specpower/prompts/`,
-    `${rootDir}/specpower/schemas/`,
-    `${rootDir}/specpower/templates/`,
-    markerEnd,
-    '',
-  ].join('\n');
+  const customLine = `specpower/custom/`;
 
   let existing = '';
   try {
@@ -645,9 +666,28 @@ async function updateGitignore(
     }
   }
 
+  // Already has a marker block: just ensure the custom/ line is present
+  // (upgrades a block written by an older specpower that lacked custom).
   if (existing.includes(markerStart)) {
+    if (!existing.includes(customLine)) {
+      const updated = existing.replace(
+        markerEnd,
+        `${customLine}\n${markerEnd}`,
+      );
+      await fs.writeFile(gitignorePath, updated, 'utf-8');
+    }
     return;
   }
+
+  const block = [
+    markerStart,
+    `${rootDir}/specpower/prompts/`,
+    `${rootDir}/specpower/schemas/`,
+    `${rootDir}/specpower/templates/`,
+    customLine,
+    markerEnd,
+    '',
+  ].join('\n');
 
   const separator = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
   await fs.writeFile(gitignorePath, existing + separator + '\n' + block, 'utf-8');
