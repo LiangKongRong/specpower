@@ -245,29 +245,60 @@ export function extractSkillDescription(
 }
 
 /**
+ * Resolves the layout-correct skill file path for a `read-file` tool, to embed
+ * in the command-alias body. Project scope → `<rootDir>/...` (cwd-relative);
+ * user scope → `~/<rootDir>/...` (user-scope skills are copied under the home).
+ * Derived from the adapter's own `skillDestRelPath` so it tracks each tool's
+ * layout (nested `skills/<dir>/SKILL.md`, flat `agent/<dir>.md`) automatically.
+ */
+function skillFilePath(
+  tool: ToolAdapter,
+  skillDirName: string,
+  ctx: TransformCtx,
+): string {
+  const rel = tool.skillDestRelPath(skillDirName);
+  const base = ctx.scope === 'user' ? `~/${tool.rootDir}/` : `${tool.rootDir}/`;
+  return `${base}${rel}`;
+}
+
+/**
  * Generates a command alias markdown file.
  *
  * The body is intentionally imperative and exhaustive: a bare "Invoke the
  * specpower:X skill." sentence is too weak — the model frequently skips the
  * Skill tool call (acting on ARGUMENTS directly) or runs only some stages of
- * the loaded skill. The generated body MUST therefore (a) name the exact
- * skill to load via the Skill tool, (b) require executing every stage in
- * order with no skipping/abbreviating, and (c) forward any ARGUMENTS block
+ * the loaded skill. The generated body MUST therefore (a) load the skill via
+ * a mechanism the runtime actually exposes, (b) require executing every stage
+ * in order with no skipping/abbreviating, and (c) forward any ARGUMENTS block
  * into the skill rather than acting on it before the skill is loaded.
+ *
+ * The loading mechanism is tool-aware (`tool.skillLoadMechanism`) so the alias
+ * is reliable across ALL supported tools, not just Claude: `skill-tool` tools
+ * (claude/cac/chrys) name the skill and tell the model to call the host Skill
+ * tool (scope-agnostic, path-free); `read-file` tools (opencode, which exposes
+ * no Skill tool) tell the model to Read the skill file at its layout-correct
+ * path. Both branches carry the same every-stage / no-skip / ARGUMENTS guard.
  *
  * Exported for reuse by `specpower sync`.
  */
 export function generateCommandAlias(
   commandName: CommandName,
   description: string,
+  tool: ToolAdapter,
+  ctx: TransformCtx,
 ): string {
-  return [
-    '---',
-    `description: "${description}"`,
-    '---',
-    `Load the \`specpower:${commandName}\` skill by calling the Skill tool with \`specpower:${commandName}\`, then execute EVERY stage the skill defines, in order, from start to finish. Do not skip, summarize, or replace any stage with your own steps, and do not begin work until the skill is loaded. If an \`ARGUMENTS:\` block is provided below, treat it as the task input to forward into the skill — do not act on it directly before loading the skill.`,
-    '',
-  ].join('\n');
+  const skillName = `specpower-${commandName}`;
+  const everyStage =
+    'execute EVERY stage the skill defines, in order, from start to finish';
+  const noSkip =
+    'Do not skip, summarize, or replace any stage with your own steps';
+  const argsForward =
+    'If an `ARGUMENTS:` block is provided below, treat it as the task input to forward into the skill — do not act on it directly before the skill is loaded';
+  const body =
+    tool.skillLoadMechanism === 'read-file'
+      ? `Read \`${skillFilePath(tool, skillName, ctx)}\` and ${everyStage}. ${noSkip}, and do not begin work until you have read the file. ${argsForward.replace('the skill is loaded', 'reading the skill file')}.`
+      : `Load the \`${skillName}\` skill by calling the Skill tool with \`${skillName}\`, then ${everyStage}. ${noSkip}, and do not begin work until the skill is loaded. ${argsForward}.`;
+  return ['---', `description: "${description}"`, '---', body, ''].join('\n');
 }
 
 /**
@@ -474,7 +505,7 @@ export async function copySkillsAndCommands(
       }
 
       // Generate command alias
-      const aliasContent = generateCommandAlias(cmd, description);
+      const aliasContent = generateCommandAlias(cmd, description, tool, ctx);
       await fs.mkdir(join(destCommandPath, '..'), { recursive: true });
       await fs.writeFile(destCommandPath, aliasContent, 'utf-8');
     }),

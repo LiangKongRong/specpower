@@ -78,6 +78,23 @@ export interface ToolAdapter {
   readonly skillLayout: 'flat' | 'nested';
 
   /**
+   * How the generated command-alias body instructs the model to load this
+   * tool's skill — the dispatch stub must use a mechanism the runtime actually
+   * exposes, otherwise the model never loads the skill (the original bug).
+   *
+   * - `skill-tool`: the runtime exposes a host Skill tool that resolves skills
+   *   by name (claude/cac/chrys). The alias body names the skill and tells the
+   *   model to call the Skill tool. Scope-agnostic and path-free, so it works
+   *   for both project and user scope and sidesteps `~` path expansion.
+   * - `read-file`: the runtime has no Skill tool (opencode exposes only
+   *   read/write/edit/bash/glob/grep). The alias body tells the model to Read
+   *   the skill file at its layout-correct path (project: `<rootDir>/...`,
+   *   user: `~/<rootDir>/...`).
+   */
+  readonly skillLoadMechanism: 'skill-tool' | 'read-file';
+
+
+  /**
    * Transform a source SKILL.md into the emitted file content for this tool:
    * rewrite prompt references (project → `<rootDir>/specpower/prompts/`,
    * user → `<packageRoot>/prompts/`) and, for opencode, replace the frontmatter
