@@ -21,12 +21,31 @@ export const CHANGE_PHASES = ['plan', 'refined', 'built', 'archived'] as const;
 export type ChangePhase = (typeof CHANGE_PHASES)[number];
 
 /**
+ * All valid execution modes a `/specpower:build` run can use.
+ *
+ * - `subagent`: dispatch a fresh implementer subagent per task with two-stage
+ *   review between tasks (the recommended default when subagents are available).
+ * - `inline`: execute tasks in-session with batch checkpoints for review
+ *   (used when subagents are unavailable or the user prefers same-session work).
+ *
+ * The chosen mode is recorded in `.specpower.yaml` so the build resumes the
+ * same path after interruption/restart; Phase B hard-gates on a recorded mode.
+ */
+export const EXECUTION_MODES = ['subagent', 'inline'] as const;
+
+/**
+ * Union type of valid execution modes.
+ */
+export type ExecutionMode = (typeof EXECUTION_MODES)[number];
+
+/**
  * Metadata stored in each change's .specpower.yaml file.
  */
 export interface ChangeMetadata {
   readonly schema: string;
   readonly created: string;
   readonly phase?: ChangePhase;
+  readonly executionMode?: ExecutionMode;
   readonly [key: string]: unknown;
 }
 
@@ -41,6 +60,7 @@ const changeMetadataSchema = z
     schema: z.string(),
     created: z.string(),
     phase: z.enum(CHANGE_PHASES).optional(),
+    executionMode: z.enum(EXECUTION_MODES).optional(),
   })
   .passthrough();
 
@@ -58,6 +78,16 @@ function formatZodError(error: z.ZodError, metaPath: string): Error {
   if (hasInvalidPhase) {
     return new Error(
       'Invalid phase in metadata: expected one of plan|refined|built|archived',
+    );
+  }
+
+  const hasInvalidMode = error.issues.some(
+    (issue) => issue.path[0] === 'executionMode' && issue.code === 'invalid_enum_value',
+  );
+
+  if (hasInvalidMode) {
+    return new Error(
+      'Invalid executionMode in metadata: expected one of subagent|inline',
     );
   }
 

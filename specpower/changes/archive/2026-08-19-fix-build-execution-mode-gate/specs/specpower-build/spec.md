@@ -1,42 +1,4 @@
-### Requirement: Custom coding standards overlay in build
-The build's implementer subagent SHALL follow project-defined coding rules in `specpower/custom/coding/` (all top-level `.md` files, sorted lexicographically by filename) as an additional dimension layered on top of the built-in checklist. These rules are project-specific and override general best-practice advice for project conventions (naming, structure, style); built-in safety/correctness rules always apply.
-
-**Delivery:** the implementer subagent SHALL NOT read `specpower/custom/coding/` itself, and the controller SHALL NOT fill the placeholder at runtime. At `specpower init`/`sync` time, the system SHALL read the top-level `.md` files and replace the `Project Coding Standards (controller-inlined)` placeholder in `prompts/shared/implementer-prompt.md` with their concatenated contents. The implementer therefore receives the rules as inline text in the baked prompt, conforming to "provide full text, never make a subagent read files" — this also avoids the worktree-absence failure (gitignored `specpower/custom/` is not in a fresh worktree; worktree setup runs `specpower sync` to regenerate the baked prompt).
-
-#### Scenario: sync bakes coding rules into implementer-prompt.md
-- **WHEN** `specpower/custom/coding/` exists and contains `.md` files
-- **THEN** the system SHALL read all top-level `.md` files (sorted lexicographically by filename; subdirectories and non-`.md` files ignored)
-
-#### Scenario: sync writes explicit none when coding rules absent
-- **WHEN** `specpower/custom/coding/` does not exist or has no `.md` files
-- **THEN** the system SHALL write the literal `none` into the placeholder (not blank, not skipped)
-
-#### Scenario: Rule conflicts with task spec raised as concern
-- **WHEN** a custom coding rule conflicts with the task spec or plan
-- **THEN** the implementer SHALL NOT silently ignore either
-
-### Requirement: Worktree regenerates gitignored specpower assets
-During `/specpower:build` Phase B worktree setup, the system SHALL regenerate specpower's gitignored assets (`specpower/custom/`, `.claude/specpower/prompts/`, `schemas/`, `templates/`) inside the worktree by running `specpower sync` there, because a fresh git worktree contains only tracked files and would otherwise lack these assets — causing the controller to fail reading its own prompts and custom rules. This step SHALL run only when `specpower/config.yaml` exists (the project is a specpower project) and the `specpower` CLI is on PATH; otherwise it is skipped silently.
-
-#### Scenario: Worktree setup runs specpower sync
-- **WHEN** `/specpower:build` Phase B creates a git worktree for implementation
-- **THEN** the worktree setup SHALL run `specpower sync` inside the worktree
-
-#### Scenario: Fresh worktree lacks gitignored assets until synced
-- **WHEN** a git worktree is created in a specpower project (before any sync)
-- **THEN** the worktree SHALL NOT contain `specpower/custom/` or `.claude/specpower/prompts/` (they are gitignored)
-
-#### Scenario: Non-specpower project skips sync in worktree
-- **WHEN** the worktree project has no `specpower/config.yaml`
-- **THEN** the setup SHALL skip the `specpower sync` step silently
-
-#### Scenario: specpower CLI missing from PATH skips sync silently
-- **WHEN** `specpower/config.yaml` exists in the worktree but the `specpower` CLI is not on PATH
-- **THEN** the setup SHALL skip the sync step silently (the `command -v specpower` guard fails)
-
-#### Scenario: Worktree sync does not stamp config.yaml version
-- **WHEN** `specpower sync` runs inside a worktree (worktree setup, per the requirement above)
-- **THEN** the sync SHALL regenerate gitignored assets (custom/, prompts/, schemas/, templates/) but SHALL NOT stamp the `version:` line of the worktree's `specpower/config.yaml`
+## ADDED Requirements
 
 ### Requirement: Build prompts for execution mode at build start (Stage 0)
 At `/specpower:build` start — before Phase A — the controller SHALL determine and record the execution mode (Subagent-Driven vs Inline Execution). When no mode is recorded, the controller SHALL present both options and ask the user to choose (no silent default), then persist the choice. The mode choice is owned by Stage 0 of `specpower-build/SKILL.md`; Phase A's Execution Handoff SHALL NOT present this choice.
@@ -46,14 +8,20 @@ At `/specpower:build` start — before Phase A — the controller SHALL determin
 #### Scenario: Stage 0 presents both execution modes when mode is unset
 - **WHEN** `/specpower:build` starts and `executionMode` is unset in `.specpower.yaml`
 - **THEN** the controller SHALL present Subagent-Driven and Inline Execution as the two options
+- **AND** SHALL ask the user to choose
+- **AND** SHALL NOT silently default to either mode
 
 #### Scenario: Stage 0 resumes a recorded mode without re-asking
 - **WHEN** `/specpower:build` starts and `executionMode` is already recorded in `.specpower.yaml`
 - **THEN** the controller SHALL use the recorded mode
+- **AND** SHALL NOT re-ask the user
+- **AND** SHALL announce it is resuming in that mode
 
 #### Scenario: Phase A Execution Handoff defers the mode choice to Stage 0
 - **WHEN** Phase A completes the rewrite and presents the Before/After audit
 - **THEN** `phase-a-plan.md`'s Execution Handoff SHALL present the rewrite for confirmation only
+- **AND** SHALL NOT ask the execution-mode question
+- **AND** SHALL defer the mode choice to Stage 0 (already made at build start)
 
 ### Requirement: Execution mode persists in .specpower.yaml across interruption and restart
 The execution mode decision SHALL be stored in the change's `.specpower.yaml` under an `executionMode` field whose value is one of `subagent` | `inline`. The field is optional (absent means "not yet chosen"). Setting it SHALL preserve all other metadata fields (schema, created, phase). An invalid value SHALL be rejected both on write (by the `change mode --set` command) and on read (by the metadata zod schema). Backward compatibility: changes created before this field existed (no `executionMode` key) SHALL read as unset, not error.
@@ -63,6 +31,7 @@ The execution mode decision SHALL be stored in the change's `.specpower.yaml` un
 #### Scenario: setExecutionMode records the mode and preserves other fields
 - **WHEN** `setExecutionMode(name, 'inline', root)` is called on a change with existing schema/created/phase
 - **THEN** `.specpower.yaml` SHALL contain `executionMode: inline`
+- **AND** the schema, created, and phase fields SHALL be unchanged
 
 #### Scenario: getExecutionMode reads the recorded value
 - **WHEN** `.specpower.yaml` contains `executionMode: subagent`
@@ -71,18 +40,22 @@ The execution mode decision SHALL be stored in the change's `.specpower.yaml` un
 #### Scenario: getExecutionMode returns undefined when unset (backward compat)
 - **WHEN** `.specpower.yaml` has no `executionMode` key (pre-existing change)
 - **THEN** `getExecutionMode(name, root)` SHALL return `undefined`
+- **AND** SHALL NOT throw
 
 #### Scenario: setExecutionMode is idempotent (resume survives restart)
 - **WHEN** `setExecutionMode` is called with the same value already recorded
 - **THEN** the field SHALL remain that value
+- **AND** a restart that re-reads SHALL observe the same mode
 
 #### Scenario: invalid executionMode is rejected on set
 - **WHEN** `setExecutionMode(name, 'parallel', root)` is called with a value not in {subagent, inline}
 - **THEN** the call SHALL throw an error listing `subagent` and `inline` as valid values
+- **AND** SHALL NOT write the invalid value
 
 #### Scenario: invalid executionMode is rejected on read
 - **WHEN** `.specpower.yaml` contains `executionMode: parallel` (hand-edited corruption)
 - **THEN** `readChangeMetadata` / `getExecutionMode` SHALL throw
+- **AND** the error SHALL mention `subagent` and `inline`
 
 ### Requirement: Phase B hard-gates on a recorded execution mode
 Phase B SHALL verify a recorded `executionMode` exists before any task runs. This guards against an interrupted/restarted build that skipped Stage 0, or a hand-edited `.specpower.yaml`. If a mode is recorded, Phase B SHALL route to the matching path (subagent path or inline path). If unset, Phase B SHALL STOP and run Stage 0 (prompt + record) before proceeding — it SHALL NOT silently default.
@@ -92,6 +65,8 @@ Phase B SHALL verify a recorded `executionMode` exists before any task runs. Thi
 #### Scenario: Phase B hard gate runs Stage 0 when mode is missing
 - **WHEN** Phase B is entered and `executionMode` is unset in `.specpower.yaml`
 - **THEN** the controller SHALL STOP and run Stage 0 (present choice, record)
+- **AND** SHALL NOT silently default to either mode
+- **AND** SHALL only proceed to Stage B1 after a mode is recorded
 
 #### Scenario: Phase B routes to the subagent path when mode is subagent
 - **WHEN** Phase B is entered and `executionMode` is `subagent`
@@ -100,6 +75,7 @@ Phase B SHALL verify a recorded `executionMode` exists before any task runs. Thi
 #### Scenario: Phase B routes to the inline path when mode is inline
 - **WHEN** Phase B is entered and `executionMode` is `inline`
 - **THEN** the controller SHALL follow the inline path by reading `.claude/specpower/prompts/shared/executing-plans.md`
+- **AND** SHALL execute tasks in-session with per-task/per-group confirmation checkpoints as the inline equivalent of Gate B
 
 #### Scenario: worktree setup is common to both execution paths
 - **WHEN** either Phase B path begins

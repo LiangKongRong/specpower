@@ -6,6 +6,7 @@ import { registerChangeNewCommand } from './commands/change-new.js';
 import { registerChangeStatusCommand } from './commands/change-status.js';
 import { registerChangeArchiveCommand } from './commands/change-archive.js';
 import { registerChangePhaseCommand } from './commands/change-phase.js';
+import { registerChangeModeCommand } from './commands/change-mode.js';
 import { registerInstructionsCommand } from './commands/instructions.js';
 import { registerValidateCommand } from './commands/validate.js';
 import { registerInitCommand } from './commands/init.js';
@@ -33,6 +34,7 @@ registerChangeNewCommand(changeCmd);
 registerChangeStatusCommand(changeCmd);
 registerChangeArchiveCommand(changeCmd);
 registerChangePhaseCommand(changeCmd);
+registerChangeModeCommand(changeCmd);
 
 // Top-level commands
 registerInstructionsCommand(program);
