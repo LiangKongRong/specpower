@@ -415,3 +415,93 @@ describe('syncAssets per tool (SPECPOWER_TOOL, project scope)', () => {
     expect(skill).toContain('.agents/specpower/prompts/');
   });
 });
+
+// Regression for cac/chrys root-dir correctness. Before the fix, sync copied
+// prompt files verbatim (so cross-prompt `.claude/specpower/prompts/...` refs
+// survived into `.cac/` projects) AND `bakePrompts` looked for prompt copies
+// only under the hardcoded `.claude/` root (so cac/chrys projects shipped
+// un-baked `[CONTROLLER:` placeholders). These exercise the full pipeline.
+describe('syncAssets per tool — prompt transform + custom bake', () => {
+  let tmpDir: string;
+  let savedEnv: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(join(tmpdir(), 'specpower-sync-refs-'));
+    savedEnv = process.env.SPECPOWER_TOOL;
+  });
+
+  afterEach(async () => {
+    if (savedEnv === undefined) delete process.env.SPECPOWER_TOOL;
+    else process.env.SPECPOWER_TOOL = savedEnv;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('cac: copied prompts reference .cac/ (no stray .claude/) and bake [CONTROLLER: placeholders', async () => {
+    process.env.SPECPOWER_TOOL = 'cac';
+    await syncAssets({ projectRoot: tmpDir });
+
+    // cross-prompt refs in phase-b-execute rewritten to the cac root
+    const exec = await fs.readFile(
+      join(tmpDir, '.cac', 'specpower', 'prompts', 'build', 'phase-b-execute.md'),
+      'utf-8',
+    );
+    expect(exec).not.toContain('.claude/');
+    expect(exec).toContain('.cac/specpower/prompts/shared/implementer-prompt.md');
+
+    // schemas/templates refs in phase-b-worktree rewritten (not just /prompts/)
+    const wt = await fs.readFile(
+      join(tmpDir, '.cac', 'specpower', 'prompts', 'build', 'phase-b-worktree.md'),
+      'utf-8',
+    );
+    expect(wt).not.toContain('.claude/');
+    expect(wt).toContain('.cac/specpower/schemas/');
+    expect(wt).toContain('.cac/specpower/templates/');
+
+    // specpower's own archived design doc (bare .claude/ tree nodes) rewritten
+    const design = await fs.readFile(
+      join(tmpDir, '.cac', 'specpower', 'prompts', 'reference', 'specpower', 'example-design.md'),
+      'utf-8',
+    );
+    expect(design).not.toContain('.claude/');
+
+    // the 4 custom-rule placeholder prompts are baked under .cac/ (no [CONTROLLER: left)
+    const impl = await fs.readFile(
+      join(tmpDir, '.cac', 'specpower', 'prompts', 'shared', 'implementer-prompt.md'),
+      'utf-8',
+    );
+    expect(impl).not.toMatch(/^[ \t]*\[CONTROLLER:[^\]\n]*\][ \t]*$/m);
+    // package ships custom/coding/coding-standards.md, so it must be baked in
+    expect(impl).toContain('Coding Standards');
+  });
+
+  it('cac: vendored reference/superpowers/ docs are NOT rewritten (third-party Claude Code conventions)', async () => {
+    process.env.SPECPOWER_TOOL = 'cac';
+    await syncAssets({ projectRoot: tmpDir });
+
+    const ws = await fs.readFile(
+      join(tmpDir, '.cac', 'specpower', 'prompts', 'reference', 'superpowers', 'writing-skills.md'),
+      'utf-8',
+    );
+    // `~/.claude/skills` describes Claude Code the product — must stay literal.
+    expect(ws).toContain('~/.claude/skills');
+    expect(ws).not.toContain('~/.cac/skills');
+  });
+
+  it('chrys: copied prompts reference .agents/ and bake placeholders', async () => {
+    process.env.SPECPOWER_TOOL = 'chrys';
+    await syncAssets({ projectRoot: tmpDir });
+
+    const exec = await fs.readFile(
+      join(tmpDir, '.agents', 'specpower', 'prompts', 'build', 'phase-b-execute.md'),
+      'utf-8',
+    );
+    expect(exec).not.toContain('.claude/');
+    expect(exec).toContain('.agents/specpower/prompts/shared/implementer-prompt.md');
+
+    const impl = await fs.readFile(
+      join(tmpDir, '.agents', 'specpower', 'prompts', 'shared', 'implementer-prompt.md'),
+      'utf-8',
+    );
+    expect(impl).not.toMatch(/^[ \t]*\[CONTROLLER:[^\]\n]*\][ \t]*$/m);
+  });
+});

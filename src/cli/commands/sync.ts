@@ -226,13 +226,13 @@ export async function syncAssets(
   if (scope === 'project') {
     // Project skills reference prompts/schemas/templates via relative paths
     // resolved against the project cwd, so copy them next to the skills.
-    await copyPrompts(toolRoot, packageRoot);
+    await copyPrompts(tool, toolRoot, packageRoot);
     await copySchemas(toolRoot, packageRoot);
     await copyTemplates(toolRoot, packageRoot);
     await copyCustom(projectRoot, packageRoot);
     // Expand `!include` directives in custom rule files into literal text,
     // right after copyCustom copies the package-root custom/ in place.
-    await bakeCustomIncludes(projectRoot);
+    await bakeCustomIncludes(projectRoot, tool.rootDir);
     refreshed.push('prompts', 'schemas', 'templates', 'custom');
 
     // Stamp the installed version into config.yaml so a later `specpower init`
