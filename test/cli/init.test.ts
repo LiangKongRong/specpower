@@ -7,6 +7,8 @@ import {
   detectVersionDrift,
   readStoredVersion,
   stampVersionInConfig,
+  generateCommandAlias,
+  COMMAND_NAMES,
 } from '../../src/cli/commands/init.js';
 
 const PACKAGE_ROOT = resolve(import.meta.dirname, '..', '..');
@@ -99,6 +101,34 @@ describe('initProject', () => {
       const content = await fs.readFile(cmdPath, 'utf-8');
       expect(content).toContain('---');
       expect(content).toContain(`specpower:${cmd}`);
+      // The alias body MUST drive the model to actually load the skill and run
+      // every stage — a bare "Invoke the specpower:X skill." sentence is too
+      // weak and the model skips the Skill tool or skips stages.
+      expect(content).toMatch(/Skill tool/i);
+      expect(content).toMatch(/every stage/i);
+      expect(content).toMatch(/ARGUMENTS/i);
+    }
+  });
+
+  it('generateCommandAlias produces a body that forces skill loading + full-stage execution', () => {
+    for (const cmd of COMMAND_NAMES) {
+      const body = generateCommandAlias(cmd, 'desc');
+
+      // Frontmatter carries the description.
+      expect(body.startsWith('---\n')).toBe(true);
+      expect(body).toContain(`description: "desc"`);
+
+      // Body names the target skill to load via the Skill tool.
+      expect(body).toContain(`specpower:${cmd}`);
+      expect(body).toMatch(/Skill tool/i);
+
+      // Body forbids skipping/abbreviating stages.
+      expect(body).toMatch(/every stage/i);
+      expect(body).toMatch(/do not skip/i);
+
+      // Body forwards ARGUMENTS into the skill instead of acting directly.
+      expect(body).toMatch(/ARGUMENTS/i);
+      expect(body).toMatch(/do not act on it directly/i);
     }
   });
 

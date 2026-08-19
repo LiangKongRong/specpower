@@ -247,6 +247,14 @@ export function extractSkillDescription(
 /**
  * Generates a command alias markdown file.
  *
+ * The body is intentionally imperative and exhaustive: a bare "Invoke the
+ * specpower:X skill." sentence is too weak — the model frequently skips the
+ * Skill tool call (acting on ARGUMENTS directly) or runs only some stages of
+ * the loaded skill. The generated body MUST therefore (a) name the exact
+ * skill to load via the Skill tool, (b) require executing every stage in
+ * order with no skipping/abbreviating, and (c) forward any ARGUMENTS block
+ * into the skill rather than acting on it before the skill is loaded.
+ *
  * Exported for reuse by `specpower sync`.
  */
 export function generateCommandAlias(
@@ -257,7 +265,7 @@ export function generateCommandAlias(
     '---',
     `description: "${description}"`,
     '---',
-    `Invoke the specpower:${commandName} skill.`,
+    `Load the \`specpower:${commandName}\` skill by calling the Skill tool with \`specpower:${commandName}\`, then execute EVERY stage the skill defines, in order, from start to finish. Do not skip, summarize, or replace any stage with your own steps, and do not begin work until the skill is loaded. If an \`ARGUMENTS:\` block is provided below, treat it as the task input to forward into the skill — do not act on it directly before loading the skill.`,
     '',
   ].join('\n');
 }
