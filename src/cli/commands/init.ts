@@ -14,7 +14,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import type { Command } from 'commander';
 import { compareVersions } from '../../utils/version.js';
 import type { ToolAdapter, SkillMeta, TransformCtx } from '../../core/tools/types.js';
-import { resolveTool, maybeToolHint } from '../../core/tools/adapters.js';
+import { resolveTool, maybeToolHint, rewriteToolRefs } from '../../core/tools/adapters.js';
 import { bakeCustomIncludes } from './custom-bake.js';
 
 /**
@@ -474,19 +474,75 @@ export async function copySkillsAndCommands(
 }
 
 /**
- * Copies prompts directory recursively under the tool root's `specpower/`
- * subdir. Tool-agnostic: only the root dir differs across tools.
+ * Recursively copies a directory, optionally transforming each file's content.
+ * Creates dest and all intermediate directories as needed.
  *
+ * `transform` receives the file's content and its path relative to the copy
+ * root (forward slashes), so it can skip paths (e.g. vendored third-party docs)
+ * or rewrite per-file. Returning the content unchanged is a passthrough.
+ *
+ * Exported for reuse by `copyPrompts` (which rewrites `.claude/` root refs to
+ * the active tool's root, skipping `reference/superpowers/`).
+ */
+export async function copyDirTransformed(
+  src: string,
+  dest: string,
+  transform: (content: string, relPath: string) => string,
+  relPrefix = '',
+): Promise<void> {
+  await fs.mkdir(dest, { recursive: true });
+
+  const entries = await fs.readdir(src, { withFileTypes: true });
+
+  await Promise.all(
+    entries.map(async (entry) => {
+      const srcPath = join(src, entry.name);
+      const destPath = join(dest, entry.name);
+      const relPath = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        await copyDirTransformed(srcPath, destPath, transform, relPath);
+      } else if (entry.isFile()) {
+        let content = await fs.readFile(srcPath, 'utf-8');
+        content = transform(content, relPath);
+        await fs.writeFile(destPath, content, 'utf-8');
+      }
+    }),
+  );
+}
+
+/**
+ * Copies prompts directory recursively under the tool root's `specpower/`
+ * subdir, rewriting every specpower-owned `.claude/` path reference to the
+ * active tool's root (`.cac/`, `.agents/`, …) so cross-prompt "Read
+ * `.claude/specpower/prompts/...`" instructions resolve under the project's
+ * actual root.
+ *
+ * Vendored third-party reference docs under `reference/superpowers/` (which
+ * describe Claude Code's / Codex's own `~/.claude/skills` conventions) are
+ * copied verbatim — their `.claude/` references are about those products, not
+ * the specpower target, and must NOT be rewritten.
+ *
+ * @param tool - Target tool adapter (its rootDir + layout drive the rewrite)
  * @param toolRoot - The tool's root directory to write into (e.g. `<project>/.claude`)
  * @param packageRoot - Absolute path to the specpower package root
  */
 export async function copyPrompts(
+  tool: ToolAdapter,
   toolRoot: string,
   packageRoot: string,
 ): Promise<void> {
   const src = join(packageRoot, 'prompts');
   const dest = join(toolRoot, 'specpower', 'prompts');
-  await copyDirRecursive(src, dest);
+  const ctx: TransformCtx = { scope: 'project', packageRoot };
+  await copyDirTransformed(src, dest, (content, relPath) => {
+    // Vendored third-party reference docs describe other tools' own directory
+    // conventions (~/.claude/skills for Claude Code); rewriting those to the
+    // active tool's root would corrupt their meaning.
+    if (relPath.startsWith('reference/superpowers/')) {
+      return content;
+    }
+    return rewriteToolRefs(content, tool.rootDir, tool.skillLayout, ctx);
+  });
 }
 
 /**
@@ -549,7 +605,7 @@ export async function initProject(
 
   await Promise.all([
     copySkillsAndCommands(tool, toolRoot, packageRoot),
-    copyPrompts(toolRoot, packageRoot),
+    copyPrompts(tool, toolRoot, packageRoot),
     copySchemas(toolRoot, packageRoot),
     copyTemplates(toolRoot, packageRoot),
     copyCustom(projectRoot, packageRoot),
@@ -557,7 +613,7 @@ export async function initProject(
 
   // Expand `!include` directives in custom rule files into literal text.
   // Runs after copyCustom so the freshly-copied custom/ is the one we bake.
-  await bakeCustomIncludes(projectRoot);
+  await bakeCustomIncludes(projectRoot, tool.rootDir);
 
   await updateGitignore(projectRoot, tool.rootDir);
 

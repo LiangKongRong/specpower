@@ -1,15 +1,21 @@
 /**
  * Concrete tool adapters + registry + resolver.
  *
- * Three adapters:
- * - `claude` (default): `.claude/skills/<dir>/SKILL.md`, `.claude/commands/specpower/<cmd>.md`.
- *   Passthrough; prompt refs stay relative under `.claude/` (current behavior).
- * - `cac`: same layout as claude but rooted at `.cac/`; rewrites prompt refs
- *   `.claude/specpower/prompts/` → `.cac/specpower/prompts/` (project) or the
- *   installed package (user).
- * - `opencode`: `.opencode/agent/<dir>.md` (flat) + `.opencode/command/<cmd>.md`;
- *   synthesizes agent frontmatter (`description`/`mode`/`tools`) and rewrites
- *   prompt refs to `.opencode/specpower/prompts/` (project) or package (user).
+ * Four adapters, all sharing the claude layout (skills/commands/specpower
+ * subtrees) except opencode (flat agent/command):
+ * - `claude` (default): `.claude/...`. Passthrough; claude root == source root
+ *   so `rewriteToolRefs` is a no-op (byte-identical to source).
+ * - `cac`: same layout, rooted at `.cac/`.
+ * - `chrys`: same layout, rooted at `.agents/`.
+ * - `opencode`: flat `.opencode/agent/<dir>.md` + `.opencode/command/<cmd>.md`;
+ *   synthesizes agent frontmatter (`description`/`mode`/`tools`).
+ *
+ * `rewriteToolRefs` (shared by all adapters' `transformSkill` and by
+ * `copyPrompts`) rewrites every specpower-owned `.claude/` path reference to
+ * the active tool's root — prompts/schemas/templates subtrees uniformly,
+ * skills/commands layout-aware (nested `skills/`+`commands/`, flat `agent/`+
+ * `command/`), plus bare descriptive `.claude/`. Vendored third-party reference
+ * docs (`prompts/reference/superpowers/`) are excluded by the caller.
  */
 
 import { homedir } from 'node:os';
@@ -25,12 +31,52 @@ export interface ToolListing {
 }
 
 /**
- * Rewrite `.claude/specpower/prompts/` references to `targetPrefix`. Used by
- * every adapter; for `claude` + project scope `targetPrefix` equals the source
- * prefix so this is a no-op (preserving exact current behavior).
+ * Rewrite every specpower-owned `.claude/` path reference in shipped skill +
+ * prompt content to the active tool's root, so generated files for cac/chrys
+ * (rooted at `.cac/` / `.agents/`) never point at the default `.claude/` root.
+ *
+ * Three ref classes, applied in order:
+ * 1. `.claude/specpower/` subtree (prompts / schemas / templates) — uniform
+ *    across all tools: project → `<rootDir>/specpower/`, user → `<packageRoot>/`
+ *    (prompts/schemas/templates are sourced from the package per-user).
+ * 2. `.claude/skills/` + `.claude/commands/` — layout-aware: nested tools
+ *    (claude/cac/chrys) keep `skills/`+`commands/` under the root; flat opencode
+ *    maps them to its `agent/`+`command/` dirs.
+ * 3. any remaining bare `.claude/` (descriptive, e.g. tree nodes in the archived
+ *    design doc) → `<rootDir>/`. A no-op for claude, so the default stays byte-
+ *    identical to the source.
+ *
+ * Vendored third-party reference docs (`prompts/reference/superpowers/*`, which
+ * describe Claude Code's / Codex's own `~/.claude/skills` conventions) are
+ * excluded by the caller (copyPrompts) — they must never be rewritten.
  */
-function rewritePromptRefs(content: string, targetPrefix: string): string {
-  return content.replace(/\.claude\/specpower\/prompts\//g, targetPrefix);
+export function rewriteToolRefs(
+  content: string,
+  rootDir: string,
+  skillLayout: 'flat' | 'nested',
+  ctx: TransformCtx,
+): string {
+  const specpowerTarget =
+    ctx.scope === 'user'
+      ? `${forward(ctx.packageRoot)}/`
+      : `${rootDir}/specpower/`;
+  let out = content.replace(/\.claude\/specpower\//g, specpowerTarget);
+
+  const flat = skillLayout === 'flat';
+  out = out.replace(
+    /\.claude\/skills\//g,
+    flat ? `${rootDir}/agent/` : `${rootDir}/skills/`,
+  );
+  out = out.replace(
+    /\.claude\/commands\//g,
+    flat ? `${rootDir}/command/` : `${rootDir}/commands/`,
+  );
+
+  // Remaining bare `.claude/` (not followed by specpower/skills/commands) is
+  // descriptive; rewrite to the root so cac/chrys output has zero stray
+  // `.claude/` refs.
+  out = out.replace(/\.claude\//g, `${rootDir}/`);
+  return out;
 }
 
 /**
@@ -68,13 +114,8 @@ const claudeAdapter: ToolAdapter = {
   commandsScanSubdir: 'commands/specpower',
   skillDestRelPath: (skillDir) => `skills/${skillDir}/SKILL.md`,
   commandDestRelPath: (cmd) => `commands/specpower/${cmd}.md`,
-  transformSkill: (src, _meta, ctx) => {
-    const target =
-      ctx.scope === 'user'
-        ? `${forward(ctx.packageRoot)}/prompts/`
-        : '.claude/specpower/prompts/';
-    return rewritePromptRefs(src, target);
-  },
+  transformSkill: (src, _meta, ctx) =>
+    rewriteToolRefs(src, '.claude', 'nested', ctx),
 };
 
 /**
@@ -90,13 +131,8 @@ const cacAdapter: ToolAdapter = {
   commandsScanSubdir: 'commands/specpower',
   skillDestRelPath: (skillDir) => `skills/${skillDir}/SKILL.md`,
   commandDestRelPath: (cmd) => `commands/specpower/${cmd}.md`,
-  transformSkill: (src, _meta, ctx) => {
-    const target =
-      ctx.scope === 'user'
-        ? `${forward(ctx.packageRoot)}/prompts/`
-        : '.cac/specpower/prompts/';
-    return rewritePromptRefs(src, target);
-  },
+  transformSkill: (src, _meta, ctx) =>
+    rewriteToolRefs(src, '.cac', 'nested', ctx),
 };
 
 /** Tools the opencode agent body may use. Best-effort; see module docstring. */
@@ -106,8 +142,9 @@ const OPENCODE_TOOLS = ['read', 'write', 'edit', 'bash', 'glob', 'grep'];
  * `opencode` adapter — flat agent files under `.opencode/agent/`, commands
  * under `.opencode/command/`. The source SKILL.md frontmatter (`name`/`description`)
  * is replaced with opencode's agent frontmatter (`description`/`mode`/`tools`),
- * and prompt refs are rewritten to `.opencode/specpower/prompts/` (project) or
- * the installed package (user).
+ * and every `.claude/` path ref is rewritten to the opencode root: the specpower
+ * subtree (`.opencode/specpower/...` project / package user), with skills →
+ * `agent/` and commands → `command/` (flat layout).
  */
 const opencodeAdapter: ToolAdapter = {
   id: 'opencode',
@@ -121,10 +158,6 @@ const opencodeAdapter: ToolAdapter = {
     const { fm, body } = splitFrontmatter(src);
     const description =
       descriptionFromFrontmatter(fm) ?? meta.description ?? `Specpower ${meta.command} skill`;
-    const target =
-      ctx.scope === 'user'
-        ? `${forward(ctx.packageRoot)}/prompts/`
-        : '.opencode/specpower/prompts/';
     const toolsBlock = OPENCODE_TOOLS.map((t) => `  - ${t}`).join('\n');
     const newFrontmatter =
       '---\n' +
@@ -133,7 +166,7 @@ const opencodeAdapter: ToolAdapter = {
       'tools:\n' +
       toolsBlock +
       '\n---\n\n';
-    return newFrontmatter + rewritePromptRefs(body, target);
+    return newFrontmatter + rewriteToolRefs(body, '.opencode', 'flat', ctx);
   },
 };
 
@@ -150,13 +183,8 @@ const chrysAdapter: ToolAdapter = {
   commandsScanSubdir: 'commands/specpower',
   skillDestRelPath: (skillDir) => `skills/${skillDir}/SKILL.md`,
   commandDestRelPath: (cmd) => `commands/specpower/${cmd}.md`,
-  transformSkill: (src, _meta, ctx) => {
-    const target =
-      ctx.scope === 'user'
-        ? `${forward(ctx.packageRoot)}/prompts/`
-        : '.agents/specpower/prompts/';
-    return rewritePromptRefs(src, target);
-  },
+  transformSkill: (src, _meta, ctx) =>
+    rewriteToolRefs(src, '.agents', 'nested', ctx),
 };
 
 /** All adapters in canonical order (claude first as the default). */

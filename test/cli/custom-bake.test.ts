@@ -459,4 +459,45 @@ describe('bakeCustomIncludes', () => {
     expect(coding).not.toMatch(/!\s*include/);
     expect(coding).toContain('## Naming');
   });
+
+  it('bakes [CONTROLLER: placeholders into a non-claude root (.cac) when rootDir is passed', async () => {
+    // Regression: bakePrompts hardcoded `.claude/specpower/prompts/...`, so for
+    // a cac project (prompts live under .cac/specpower/prompts/) the placeholder
+    // bake was silently skipped and the [CONTROLLER: text shipped un-baked.
+    await write(
+      join(dir, 'specpower', 'custom', 'coding', 'r.md'),
+      '- C-RULE\n',
+    );
+    await write(
+      join(dir, '.cac', 'specpower', 'prompts', 'shared', 'implementer-prompt.md'),
+      'before\n[CONTROLLER: paste coding rules here]\nafter\n',
+    );
+
+    await bakeCustomIncludes(dir, '.cac');
+
+    const out = await read(
+      join(dir, '.cac', 'specpower', 'prompts', 'shared', 'implementer-prompt.md'),
+    );
+    expect(out).toContain('C-RULE');
+    expect(out).not.toMatch(/^[ \t]*\[CONTROLLER:[^\]]*\][ \t]*$/m);
+  });
+
+  it('defaults to .claude root when rootDir is omitted (back-compat)', async () => {
+    await write(
+      join(dir, 'specpower', 'custom', 'coding', 'r.md'),
+      '- C-RULE\n',
+    );
+    await write(
+      join(dir, '.claude', 'specpower', 'prompts', 'shared', 'implementer-prompt.md'),
+      '[CONTROLLER: paste coding rules here]\n',
+    );
+
+    await bakeCustomIncludes(dir); // no rootDir -> .claude (legacy default)
+
+    const out = await read(
+      join(dir, '.claude', 'specpower', 'prompts', 'shared', 'implementer-prompt.md'),
+    );
+    expect(out).toContain('C-RULE');
+    expect(out).not.toMatch(/^[ \t]*\[CONTROLLER:[^\]]*\][ \t]*$/m);
+  });
 });

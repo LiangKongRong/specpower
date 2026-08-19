@@ -179,6 +179,94 @@ describe('transformSkill', () => {
   });
 });
 
+// Regression: cac/chrys root-dir correctness. The rewrite must cover EVERY
+// specpower-owned `.claude/` path form shipped in skills + prompts — not just
+// `.claude/specpower/prompts/`. Before this fix, schemas/templates refs,
+// `.claude/skills/`, `.claude/commands/`, and bare `.claude/` were left as
+// `.claude/` in cac/chrys output, so generated skills pointed at the wrong
+// (non-existent) root and cross-prompt reads 404'd.
+describe('transformSkill — full .claude/ root rewrite (cac/chrys/opencode)', () => {
+  // A skill body exercising every shipped ref form: the specpower subtree
+  // (prompts/schemas/templates), the sibling skills + commands dirs, and a
+  // bare descriptive `.claude/` (as in the archived example-design tree).
+  const FULL_SRC = [
+    'Read `.claude/specpower/prompts/plan/proposal.md`.',
+    'Load `.claude/specpower/schemas/change.yaml` and `.claude/specpower/templates/spec.md`.',
+    'init sets up `.claude/skills/` and `.claude/commands/`.',
+    'See the `.claude/` directory tree.',
+  ].join('\n');
+
+  it('claude project = byte-identical passthrough for ALL ref forms', () => {
+    const out = getToolAdapter('claude').transformSkill(
+      FULL_SRC,
+      meta('plan'),
+      projectCtx(),
+    );
+    expect(out).toBe(FULL_SRC);
+  });
+
+  it('cac project rewrites every .claude/ form -> .cac/ (zero .claude/ left)', () => {
+    const out = getToolAdapter('cac').transformSkill(
+      FULL_SRC,
+      meta('plan'),
+      projectCtx(),
+    );
+    expect(out).not.toContain('.claude/');
+    expect(out).toContain('.cac/specpower/prompts/plan/proposal.md');
+    expect(out).toContain('.cac/specpower/schemas/change.yaml');
+    expect(out).toContain('.cac/specpower/templates/spec.md');
+    expect(out).toContain('.cac/skills/');
+    expect(out).toContain('.cac/commands/');
+    expect(out).toContain('the `.cac/` directory');
+  });
+
+  it('chrys project rewrites every .claude/ form -> .agents/', () => {
+    const out = getToolAdapter('chrys').transformSkill(
+      FULL_SRC,
+      meta('plan'),
+      projectCtx(),
+    );
+    expect(out).not.toContain('.claude/');
+    expect(out).toContain('.agents/specpower/prompts/plan/proposal.md');
+    expect(out).toContain('.agents/specpower/schemas/change.yaml');
+    expect(out).toContain('.agents/specpower/templates/spec.md');
+    expect(out).toContain('.agents/skills/');
+    expect(out).toContain('.agents/commands/');
+  });
+
+  it('opencode project maps .claude/skills -> .opencode/agent, commands -> .opencode/command', () => {
+    const out = getToolAdapter('opencode').transformSkill(
+      FULL_SRC,
+      meta('plan'),
+      projectCtx(),
+    );
+    // opencode is flat-layout: skills live under agent/, commands under command/
+    expect(out).toContain('.opencode/agent/');
+    expect(out).toContain('.opencode/command/');
+    expect(out).not.toContain('.claude/skills/');
+    expect(out).not.toContain('.claude/commands/');
+    // specpower subtree is uniform (root differs only)
+    expect(out).toContain('.opencode/specpower/prompts/plan/proposal.md');
+    expect(out).toContain('.opencode/specpower/schemas/change.yaml');
+  });
+
+  it('user scope: specpower subtree -> package; skills/commands -> rootDir (nested)', () => {
+    const out = getToolAdapter('cac').transformSkill(
+      FULL_SRC,
+      meta('plan'),
+      userCtx('C:\\pkg\\specpower'),
+    );
+    expect(out).toContain('C:/pkg/specpower/prompts/plan/proposal.md');
+    expect(out).toContain('C:/pkg/specpower/schemas/change.yaml');
+    expect(out).toContain('C:/pkg/specpower/templates/spec.md');
+    // skills + commands are written per-user under ~/.<rootDir>, so they stay
+    // root-relative (NOT package-relative).
+    expect(out).toContain('.cac/skills/');
+    expect(out).toContain('.cac/commands/');
+    expect(out).not.toContain('.claude/');
+  });
+});
+
 describe('resolveTool', () => {
   let savedHome: string | undefined;
   let fakeHome: string;

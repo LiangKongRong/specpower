@@ -346,7 +346,10 @@ async function expandFile(absFile: string, ctx: BakeCtx): Promise<string> {
  * (`.claude/specpower/prompts/...`) are baked to the concatenated custom
  * text of the matching kind.
  */
-export async function bakeCustomIncludes(projectRoot: string): Promise<void> {
+export async function bakeCustomIncludes(
+  projectRoot: string,
+  rootDir = '.claude',
+): Promise<void> {
   const roots = await resolveIncludeRoots(projectRoot);
   let totalBytes = 0;
 
@@ -382,22 +385,31 @@ export async function bakeCustomIncludes(projectRoot: string): Promise<void> {
     }
   }
 
-  await bakePrompts(projectRoot);
+  await bakePrompts(projectRoot, rootDir);
 }
 
 /**
  * Maps a custom kind to each prompt-copy path (relative to projectRoot) whose
  * `[CONTROLLER: ...]` placeholder should be baked to that kind's concatenated
- * custom text. These are *copies* under `.claude/specpower/prompts/` (created
- * by init), not the package-root sources — baking the sources would leak
- * project-specific custom text back into the template.
+ * custom text. These are *copies* under `<rootDir>/specpower/prompts/` (created
+ * by init/sync for the active tool — `.claude/`, `.cac/`, `.agents/`, …), not the
+ * package-root sources — baking the sources would leak project-specific custom
+ * text back into the template.
+ *
+ * `rootDir` defaults to `.claude` for back-compat with callers (and tests) that
+ * predate multi-root support.
  */
-const PROMPT_PLACEHOLDER_MAP: Array<{ kind: 'coding' | 'review'; promptRel: string }> = [
-  { kind: 'coding', promptRel: join('.claude', 'specpower', 'prompts', 'shared', 'implementer-prompt.md') },
-  { kind: 'coding', promptRel: join('.claude', 'specpower', 'prompts', 'shared', 'receiving-code-review.md') },
-  { kind: 'review', promptRel: join('.claude', 'specpower', 'prompts', 'shared', 'code-reviewer-prompt.md') },
-  { kind: 'review', promptRel: join('.claude', 'specpower', 'prompts', 'review', 'code-review.md') },
-];
+function promptPlaceholderMap(
+  rootDir = '.claude',
+): Array<{ kind: 'coding' | 'review'; promptRel: string }> {
+  const base = join(rootDir, 'specpower', 'prompts');
+  return [
+    { kind: 'coding', promptRel: join(base, 'shared', 'implementer-prompt.md') },
+    { kind: 'coding', promptRel: join(base, 'shared', 'receiving-code-review.md') },
+    { kind: 'review', promptRel: join(base, 'shared', 'code-reviewer-prompt.md') },
+    { kind: 'review', promptRel: join(base, 'review', 'code-review.md') },
+  ];
+}
 
 /**
  * Reads every `.md` under `specpower/custom/{kind}/` (sorted, same order the
@@ -432,12 +444,15 @@ async function readCustomConcat(
  * copy (project not init'd, or the prompt path was removed) is skipped
  * silently — baking is best-effort over whatever copies exist on disk.
  */
-async function bakePrompts(projectRoot: string): Promise<void> {
+async function bakePrompts(
+  projectRoot: string,
+  rootDir = '.claude',
+): Promise<void> {
   const byKind = {
     coding: await readCustomConcat(projectRoot, 'coding'),
     review: await readCustomConcat(projectRoot, 'review'),
   };
-  for (const { kind, promptRel } of PROMPT_PLACEHOLDER_MAP) {
+  for (const { kind, promptRel } of promptPlaceholderMap(rootDir)) {
     const promptPath = join(projectRoot, promptRel);
     let text: string;
     try {
