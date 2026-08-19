@@ -280,20 +280,8 @@ This audit lets the user spot structural surprises (e.g., a group that exploded 
 
 ## Execution Handoff
 
-After the rewrite is complete and the Before/After audit has been presented:
+After the rewrite is complete and the Before/After audit has been presented, present the rewritten `tasks.md` to the user for confirmation (Gate A in `specpower-build/SKILL.md`).
 
-**"Rewrite complete and saved to `specpower/changes/<change-name>/tasks.md`. Two execution options:**
+**The execution-mode choice (Subagent-Driven vs Inline Execution) is owned by Stage 0 of `specpower-build/SKILL.md` and has already been made and recorded in `.specpower.yaml` at build start — do NOT ask it here.** Phase A does not present the mode question; it only produces the confirmed rewritten `tasks.md`.
 
-**1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task, review between tasks, fast iteration
-
-**2. Inline Execution** - Execute tasks in this session, batch execution with checkpoints
-
-**Which approach?"**
-
-**If Subagent-Driven chosen:**
-- **REQUIRED SUB-SKILL:** Use specpower:build Phase B
-- Fresh subagent per task + two-stage review (spec + code)
-
-**If Inline Execution chosen:**
-- **REQUIRED SUB-SKILL:** Use specpower:build Phase B (inline mode)
-- Batch execution with checkpoints for review
+After Gate A confirmation, Phase B reads the recorded mode (`specpower change mode <name>`) and routes to the matching path (Stage B0 hard gate → subagent path or inline path). Phase A hands off to Phase B without choosing a mode.
