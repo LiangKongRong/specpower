@@ -7,9 +7,19 @@ import {
   detectVersionDrift,
   readStoredVersion,
   stampVersionInConfig,
+  generateCommandAlias,
+  COMMAND_NAMES,
 } from '../../src/cli/commands/init.js';
+import { getToolAdapter } from '../../src/core/tools/adapters.js';
+import type { TransformCtx } from '../../src/core/tools/types.js';
 
 const PACKAGE_ROOT = resolve(import.meta.dirname, '..', '..');
+
+const projectCtx: TransformCtx = {
+  scope: 'project',
+  packageRoot: PACKAGE_ROOT,
+};
+const userCtx: TransformCtx = { scope: 'user', packageRoot: PACKAGE_ROOT };
 
 describe('initProject', () => {
   let tmpDir: string;
@@ -98,7 +108,65 @@ describe('initProject', () => {
       const cmdPath = join(commandsDir, `${cmd}.md`);
       const content = await fs.readFile(cmdPath, 'utf-8');
       expect(content).toContain('---');
-      expect(content).toContain(`specpower:${cmd}`);
+      // claude default → skill-tool mechanism: body names the skill (hyphen,
+      // the canonical skill-dir name) and tells the model to call the Skill tool.
+      expect(content).toContain(`specpower-${cmd}`);
+      // The alias body MUST drive the model to actually load the skill and run
+      // every stage — a bare "Invoke the specpower:X skill." sentence is too
+      // weak and the model skips the Skill tool or skips stages.
+      expect(content).toMatch(/Skill tool/i);
+      expect(content).toMatch(/every stage/i);
+      expect(content).toMatch(/do not skip/i);
+      expect(content).toMatch(/ARGUMENTS/i);
+    }
+  });
+
+  it('generateCommandAlias: skill-tool tools (claude/cac/chrys) name the skill + Skill tool + every stage, no path', () => {
+    for (const id of ['claude', 'cac', 'chrys'] as const) {
+      const tool = getToolAdapter(id);
+      for (const cmd of COMMAND_NAMES) {
+        const body = generateCommandAlias(cmd, 'desc', tool, projectCtx);
+
+        // Frontmatter carries the description.
+        expect(body.startsWith('---\n')).toBe(true);
+        expect(body).toContain(`description: "desc"`);
+
+        // Body names the target skill (hyphen = canonical skill-dir name) + Skill tool.
+        expect(body).toContain(`specpower-${cmd}`);
+        expect(body).toMatch(/Skill tool/i);
+
+        // Body forbids skipping/abbreviating stages and forwards ARGUMENTS.
+        expect(body).toMatch(/every stage/i);
+        expect(body).toMatch(/do not skip/i);
+        expect(body).toMatch(/ARGUMENTS/i);
+        expect(body).toMatch(/do not act on it directly/i);
+
+        // skill-tool body is path-free (scope-agnostic, no `~` expansion risk).
+        expect(body).not.toMatch(/Read `/);
+      }
+    }
+  });
+
+  it('generateCommandAlias: opencode (read-file) points at the flat agent path, no Skill tool', () => {
+    const tool = getToolAdapter('opencode');
+    for (const cmd of COMMAND_NAMES) {
+      // project scope → cwd-relative path
+      const proj = generateCommandAlias(cmd, 'desc', tool, projectCtx);
+      expect(proj).toContain(
+        `Read \`.opencode/agent/specpower-${cmd}.md\``,
+      );
+      expect(proj).toMatch(/every stage/i);
+      expect(proj).toMatch(/do not skip/i);
+      expect(proj).toMatch(/ARGUMENTS/i);
+      expect(proj).toMatch(/do not act on it directly/i);
+      // opencode exposes no Skill tool — the body must not reference one.
+      expect(proj).not.toMatch(/Skill tool/i);
+
+      // user scope → ~/ prefix (user-scope skills live under the home dir)
+      const usr = generateCommandAlias(cmd, 'desc', tool, userCtx);
+      expect(usr).toContain(
+        `Read \`~/.opencode/agent/specpower-${cmd}.md\``,
+      );
     }
   });
 
@@ -436,6 +504,18 @@ describe('initProject per-tool output (SPECPOWER_TOOL)', () => {
       fs.stat(join(tmpDir, '.opencode', 'command', 'plan.md')),
     ).resolves.toBeDefined();
 
+    // opencode command alias body uses the read-file mechanism: it tells the
+    // model to Read the flat agent file (opencode exposes no Skill tool).
+    const opencodeAlias = await fs.readFile(
+      join(tmpDir, '.opencode', 'command', 'plan.md'),
+      'utf-8',
+    );
+    expect(opencodeAlias).toContain(
+      'Read `.opencode/agent/specpower-plan.md`',
+    );
+    expect(opencodeAlias).toMatch(/every stage/i);
+    expect(opencodeAlias).not.toMatch(/Skill tool/i);
+
     // prompts/schemas/templates under .opencode/specpower/
     await expect(
       fs.stat(join(tmpDir, '.opencode', 'specpower', 'prompts')),
@@ -746,6 +826,18 @@ describe('initProject per-tool output (SPECPOWER_TOOL)', () => {
     await expect(
       fs.stat(join(tmpDir, '.opencode', 'command', 'plan.md')),
     ).resolves.toBeDefined();
+
+    // opencode command alias body uses the read-file mechanism: it tells the
+    // model to Read the flat agent file (opencode exposes no Skill tool).
+    const opencodeAlias = await fs.readFile(
+      join(tmpDir, '.opencode', 'command', 'plan.md'),
+      'utf-8',
+    );
+    expect(opencodeAlias).toContain(
+      'Read `.opencode/agent/specpower-plan.md`',
+    );
+    expect(opencodeAlias).toMatch(/every stage/i);
+    expect(opencodeAlias).not.toMatch(/Skill tool/i);
 
     // prompts/schemas/templates under .opencode/specpower/
     await expect(
