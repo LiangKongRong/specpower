@@ -19,6 +19,8 @@ import { validateSpec } from '../../core/validation/validator.js';
 import {
   SCENARIO_HEADER_CORRECT,
   REQUIREMENT_HEADER,
+  TESTABLE_MARKER,
+  NEGATIVE_MARKER,
 } from '../../core/validation/constants.js';
 import type { ValidationError, ValidationResult, ValidationWarning } from '../../core/validation/types.js';
 import { parseTestPlanFile, findMalformedCases } from '../../core/parsers/test-plan-parser.js';
@@ -87,21 +89,29 @@ function findChangeRoot(specPath: string): string | null {
 /**
  * Extract delta scenarios (requirement + scenario name pairs) from a spec
  * markdown string by scanning `### Requirement:` and `#### Scenario:` headers.
+ * Requirement `[testable]` and scenario `[negative]` trailing markers are
+ * stripped from the names (they are metadata, not part of the name) so names
+ * match across spec, test-plan, and main-spec archive.
  */
-function extractDeltaScenarios(content: string): { requirement: string; scenario: string }[] {
+function extractDeltaScenarios(content: string): { requirement: string; scenario: string; testable: boolean }[] {
   const normalized = content.replace(/\r\n?/g, '\n');
   const lines = normalized.split('\n');
-  const out: { requirement: string; scenario: string }[] = [];
+  const out: { requirement: string; scenario: string; testable: boolean }[] = [];
   let currentReq = '';
+  let currentReqTestable = false;
   for (const line of lines) {
     const rm = REQUIREMENT_HEADER.exec(line);
     if (rm) {
-      currentReq = rm[1].trim();
+      const raw = rm[1].trim();
+      currentReqTestable = TESTABLE_MARKER.test(raw);
+      currentReq = raw.replace(TESTABLE_MARKER, '').trim();
       continue;
     }
     const sm = SCENARIO_HEADER_CORRECT.exec(line);
     if (sm) {
-      out.push({ requirement: currentReq, scenario: sm[1].trim() });
+      const raw = sm[1].trim();
+      const scenario = raw.replace(NEGATIVE_MARKER, '').trim();
+      out.push({ requirement: currentReq, scenario, testable: currentReqTestable });
     }
   }
   return out;
@@ -156,45 +166,47 @@ async function checkTestPlan(
     failureAdmittingRequirements,
   });
   for (const issue of result.issues) {
-    errors.push({ message: issue.message });
+    // missing-branch-tag is a backward-compat warning, not an error: existing
+    // test-plans without `branch:` tags would otherwise all fail validate.
+    // The distinct-branch floor is still enforced for tagged Cases; the warning
+    // nudges authors to add `branch:` so the floor also covers their Cases.
+    // duplicate-branch and low-negative-ratio remain errors (real defects).
+    if (issue.issue === 'missing-branch-tag') {
+      warnings.push({ message: issue.message });
+    } else {
+      errors.push({ message: issue.message });
+    }
   }
   return { errors, warnings };
 }
 
 /**
- * Negative/error-path scenario keywords. A Requirement whose delta scenario
- * name contains any of these is treated as failure-admitting: its test-plan
- * must include at least one `[negative]` Case, or `missing-negative` is reported.
- * Mirrors the validator's NEGATIVE_SCENARIO_KEYWORDS set (inlined here because
- * that constant is not exported).
- */
-const NEGATIVE_SCENARIO_KEYWORDS = [
-  'throw', 'reject', 'invalid', 'missing', 'fail', 'error', 'deny',
-  'forbidden', 'timeout', 'exhaust', 'malform', 'corrupt', 'wrong',
-  'incorrect', 'duplicate', 'nonexistent',
-];
-
-/**
- * Heuristic: collect the set of Requirement names that own at least one delta
- * scenario whose name suggests a negative/error path (and thus the Requirement
- * admits failure). These are passed to checkCoverage so a missing-negative
- * error is raised when no `[negative]` Case covers the Requirement.
+ * Collect the set of Requirement names that are failure-admitting — i.e. that
+ * MUST have negative-case coverage in the test-plan.
+ *
+ * This is NO LONGER a keyword heuristic. A Requirement is failure-admitting
+ * when the spec author marked it `[testable]` in its heading. This makes
+ * "tests are mandatory" enforceable: the author explicitly opts a Requirement
+ * into the test-plan-coverage regime by marking it, instead of the validator
+ * guessing from scenario-name keywords (which missed requirements whose author
+ * simply didn't write an error-path scenario — the a4adapter root cause).
+ *
+ * Unmarked requirements fall back to the legacy keyword heuristic ONLY to
+ * preserve the `missing-negative` back-compat warning; the structural
+ * `[testable]` → negative floor lives in the validator (validateSpec), which
+ * errors (not warns) on a `[testable]` requirement with zero `[negative]`
+ * scenarios.
  */
 function collectFailureAdmittingRequirements(
-  deltaScenarios: readonly { requirement: string; scenario: string }[],
+  deltaScenarios: readonly { requirement: string; scenario: string; testable: boolean }[],
 ): string[] {
   const out = new Set<string>();
   for (const s of deltaScenarios) {
-    if (isLikelyNegativeScenario(s.scenario)) {
+    if (s.testable) {
       out.add(s.requirement);
     }
   }
   return [...out];
-}
-
-function isLikelyNegativeScenario(scenarioName: string): boolean {
-  const lower = scenarioName.toLowerCase();
-  return NEGATIVE_SCENARIO_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
 /**

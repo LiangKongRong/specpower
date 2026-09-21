@@ -30,6 +30,24 @@ describe('parseTestPlan', () => {
       file: 'src/core/tools/adapters.test.ts',
     });
   });
+  it('parses the covers field (product source files for coverage attribution) [covers-field-T1]', () => {
+    const doc = `# test-plan: demo
+
+## Capability: tools
+
+### Requirement: tool resolution → Scenario: unknown tool id throws
+
+- **Case** T1: pass an unsupported id [negative]
+  - Input: resolveTool('nope')
+  - Expected: throw /Unknown tool 'nope'/
+  - it(): throws on unknown tool id
+  - file: src/core/tools/adapters.test.ts
+  - covers: src/core/tools/adapters.ts
+`;
+    const cases = parseTestPlan(doc);
+    expect(cases).toHaveLength(1);
+    expect(cases[0].covers).toBe('src/core/tools/adapters.ts');
+  });
 });
 
 const NO_ID = `## Capability: c

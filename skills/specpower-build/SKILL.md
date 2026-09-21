@@ -9,6 +9,7 @@ description: "Two-phase build — plan rewrite + subagent TDD execution"
 > **HARD GATE (Stage 0)**: execution mode MUST be chosen and recorded in `.specpower.yaml` before Phase B. Phase B re-checks this (Stage B0).
 > **HARD GATE (Phase A)**: rewritten tasks.md must be user-confirmed before Phase B.
 > **HARD GATE (Phase B)**: each task must be reviewed (spec + code quality) and user-confirmed before next task.
+> **HARD GATE (Phase B TDD)**: every testable atomic task MUST have a failing test written *before* the implementation passes. "Testable task" = any task whose `Verify:` line asserts runtime behavior of product code (a function return, a CLI exit code, a message emitted, a state transition). Non-testable tasks (docs-only, asset/scaffold copy, version bump, config rename) are exempt — state the exemption in the task output. A testable task that reaches Gate B with no failing-test-then-pass evidence → **FAIL the task**, return to B2a. This gate closes the a4adapter-style gap where a change satisfies its spec but ships with no automated test.
 
 ## Prerequisites
 
@@ -121,6 +122,10 @@ Read the file at `.claude/specpower/prompts/build/phase-b-review.md` and follow 
 
 Dispatch a two-stage review: first a spec reviewer (does the implementation match the spec?), then a code quality reviewer (does the code meet quality standards?).
 
+**TDD evidence check (part of B2b):** the reviewer SHALL verify the task carries failing-test-then-pass evidence (a test that was red before the implementation and is green after). A testable task with no such evidence → mark the review **FAILED** and return to B2a. This is the Phase B TDD hard gate applied at the review node.
+
+**Test-plan validation hard gate (part of B2b):** after the task's tests pass, the reviewer SHALL run `specpower validate specpower/changes/<name>/specs/<capability>/spec.md` (for each capability touched by the task). If validation reports **errors** — including `low-negative-ratio` (a failure-admitting requirement's negative-case ratio below 30%) or `missing-negative` — the task is **FAILED** and returns to B2a to add the missing negative cases. This embeds the 30%-negative-coverage floor inside build (Phase B), so it cannot be skipped by omitting `/specpower:verify`. Warnings (e.g. a legitimately non-testable change) do not fail the task.
+
 #### Gate B: Per-task Confirmation
 
 Present the task output and both review reports to the user. **Ask the user to confirm the task is complete.** Do NOT proceed to the next task until confirmation is received.
@@ -147,6 +152,8 @@ Execute the plan in this session (no implementer subagent dispatch):
 4. If a step blocks (missing dependency, failing test, unclear instruction), STOP and ask the user — do not guess or force through.
 
 **Review checkpoints:** Because inline mode has no per-task spec/code reviewer subagents, the controller SHALL pause at the end of each task (or task group) and present the implementation + `Verify:` results to the user for confirmation before proceeding to the next. This is the inline-mode equivalent of Gate B.
+
+**TDD hard gate (inline):** for every testable task, the controller SHALL, before marking it completed, present the failing test that was written first, confirm it was red, then green after implementation. A testable task reaching the checkpoint without failing-test-then-pass evidence → do NOT mark completed; go back and write the test first. Non-testable tasks (docs/asset/version) state the exemption. This mirrors the subagent-path B2b TDD evidence check.
 
 **Gate B (inline): Per-task confirmation.** Do NOT proceed to the next task until the user confirms the current task is complete and verified.
 

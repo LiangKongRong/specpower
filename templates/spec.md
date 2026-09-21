@@ -11,8 +11,13 @@
 
 ## ADDED Requirements
 
-### Requirement: <!-- requirement name -->
-<!-- requirement text using SHALL/MUST -->
+### Requirement: <!-- requirement name --> [testable]
+<!-- requirement text using SHALL/MUST.
+     Append [testable] to the heading when the requirement has runtime-assertable
+     scenarios (function return, CLI exit code, emitted message, state transition,
+     rejected error). Pure-declarative requirements (format/style only) are left unmarked.
+     [testable] requirements MUST each get a test-plan Case — it is the contract
+     test-plan-draft.md and /specpower:verify Pass 4 consume. -->
 
 #### Scenario: <!-- scenario name -->
 - **WHEN** <!-- condition -->
@@ -21,11 +26,13 @@
 <!-- TIP: Every requirement SHOULD include at least one negative scenario covering a
      contract-violating or abnormal input (error path: invalid type, null where forbidden,
      permission denied; invalid state; resource exhaustion to failure).
+     Mark a negative scenario with a trailing [negative]: `#### Scenario: <name> [negative]`.
+     A [testable] requirement MUST have >=1 [negative] scenario (validator errors otherwise).
      NOTE: legitimate boundary values (empty array, extreme values, large input) are
      POSITIVE scenarios if the function accepts them — do not count them as negative.
      See negative-testing-guide.md for the positive/negative distinction. -->
 
-#### Scenario: <!-- error/boundary scenario name -->
+#### Scenario: <!-- error/boundary scenario name --> [negative]
 - **WHEN** <!-- invalid/boundary/empty condition -->
 - **THEN** <!-- error handling, rejection, or graceful degradation -->
 
@@ -35,7 +42,11 @@
      The requirement name must match the existing spec exactly. -->
 
 ### Requirement: <!-- existing requirement name -->
-<!-- full updated requirement text -->
+<!-- full updated requirement text.
+     CRITICAL: the heading MUST match the existing main-spec heading EXACTLY
+     (whitespace-insensitive). Do NOT add [testable] here unless the main-spec
+     original already has it — archive matches requirement names by exact string.
+     [testable] is added only on ADDED requirements. -->
 
 #### Scenario: <!-- updated or new scenario name -->
 - **WHEN** <!-- condition -->

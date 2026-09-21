@@ -156,6 +156,10 @@ Target 80%+ overall coverage with this distribution:
 | Regression | Every fixed bug | Bug-specific reproduction |
 | Negative | ≥ 30% (side-effect funcs); 15-30% (pure funcs) | Contract violations, invalid state, resource-exhausted-to-failure |
 
+**Per-Scenario branch coverage attribution (`covers:` field):** when writing test-plan Cases, fill the optional `covers:` field with the product source file(s) each test exercises (e.g. `src/core/tools/adapters.ts`). `/specpower:verify` Pass 5 reads the coverage report and attributes **measured file-level branch coverage** back to each Scenario via `covers:`. Target ≥75% branch coverage per Scenario (configurable). Without `covers:`, Pass 5 cannot attribute a coverage figure to the Scenario — so fill `covers:` for every testable Case.
+
+**Anti-water-injection (`branch:` field for `[negative]` Cases):** every `[negative]` Case MUST declare a `branch:` tag — a short stable id of the product error branch it tests (e.g. `validate-null-name`, `auth-reject`, `duplicate-device`). The negative-ratio floor counts **DISTINCT branches**, not Cases: two negative Cases sharing a `branch:` tag count once, and `duplicate-branch` is reported so a reviewer sees the padding trace. Without `branch:`, a negative Case is counted individually but `missing-branch-tag` is reported (the distinct-branch floor is not enforced for it). This blocks the ratio-padding where 1 error branch is "covered" by 3 negative Cases to hit 75% while only 1 branch is actually tested. A reviewer cross-checks each `branch:` tag against the actual code branch.
+
 ## Good Tests
 
 | Quality | Good | Bad |

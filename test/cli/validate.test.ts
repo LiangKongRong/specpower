@@ -164,7 +164,7 @@ describe('validate test-plan integration', () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it('reports missing-negative when a failure-admitting requirement lacks a negative case', async () => {
+  it('reports missing-negative when a [testable] requirement lacks a negative case', async () => {
     const root = await fs.mkdtemp(join(tmpdir(), 'validate-neg-'));
     const changeDir = join(root, 'specpower', 'changes', 'c2');
     const deltaSpecsDir = join(changeDir, 'specs');
@@ -174,10 +174,10 @@ describe('validate test-plan integration', () => {
       [
         '## ADDED Requirements',
         '',
-        '### Requirement: Neg Req',
+        '### Requirement: Neg Req [testable]',
         'System SHALL reject invalid input.',
         '',
-        '#### Scenario: rejects invalid input',
+        '#### Scenario: rejects invalid input [negative]',
         '- **WHEN** bad input',
         '- **THEN** system rejects',
       ].join('\n'),
@@ -207,6 +207,61 @@ describe('validate test-plan integration', () => {
     const res = await validateSpecFile(join(deltaSpecsDir, 'cap.md'));
     expect(res.valid).toBe(false);
     expect(res.errors.some((e) => /no negative case/i.test(e.message))).toBe(true);
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('errors when a [testable] requirement has zero [negative] scenarios [testable-negative-floor-T1]', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'validate-testable-floor-'));
+    const changeDir = join(root, 'specpower', 'changes', 'ctf');
+    const deltaSpecsDir = join(changeDir, 'specs');
+    await fs.mkdir(deltaSpecsDir, { recursive: true });
+    // [testable] requirement with only positive scenarios → structural error
+    // (not just a test-plan missing-negative; the spec itself is invalid)
+    await fs.writeFile(
+      join(deltaSpecsDir, 'cap.md'),
+      [
+        '## ADDED Requirements',
+        '',
+        '### Requirement: Positive Only [testable]',
+        'System SHALL accept valid input.',
+        '',
+        '#### Scenario: accepts valid input',
+        '- **WHEN** valid input',
+        '- **THEN** system accepts',
+      ].join('\n'),
+      'utf-8',
+    );
+    const res = await validateSpecFile(join(deltaSpecsDir, 'cap.md'));
+    expect(res.valid).toBe(false);
+    expect(res.errors.some((e) => /\[testable\].*\[negative\]/i.test(e.message))).toBe(true);
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('does NOT error when a [testable] requirement has a [negative] scenario [testable-negative-floor-T2]', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'validate-testable-ok-'));
+    const changeDir = join(root, 'specpower', 'changes', 'ctok');
+    const deltaSpecsDir = join(changeDir, 'specs');
+    await fs.mkdir(deltaSpecsDir, { recursive: true });
+    await fs.writeFile(
+      join(deltaSpecsDir, 'cap.md'),
+      [
+        '## ADDED Requirements',
+        '',
+        '### Requirement: With Neg [testable]',
+        'System SHALL reject invalid input.',
+        '',
+        '#### Scenario: accepts valid input',
+        '- **WHEN** valid input',
+        '- **THEN** system accepts',
+        '',
+        '#### Scenario: rejects invalid input [negative]',
+        '- **WHEN** bad input',
+        '- **THEN** system rejects',
+      ].join('\n'),
+      'utf-8',
+    );
+    const res = await validateSpecFile(join(deltaSpecsDir, 'cap.md'));
+    expect(res.errors.some((e) => /\[testable\].*\[negative\]/i.test(e.message))).toBe(false);
     await fs.rm(root, { recursive: true, force: true });
   });
 

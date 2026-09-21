@@ -44,6 +44,12 @@ Read the file at `.claude/specpower/prompts/plan/specs.md` and follow its instru
 
 Generate delta specs inside the change directory at `specpower/changes/<name>/specs/<capability>/spec.md`.
 
+**Testability marking (required):** every **ADDED** `### Requirement:` that contains ≥1 `#### Scenario:` with runtime-assertable behavior (a function return, CLI exit code, emitted message, state transition, error rejection) SHALL be marked `[testable]` in its heading — e.g. `### Requirement: Parameter Validation for StartManagingDevice [testable]`. Pure-declarative requirements (format/style only, no runtime behavior) are left unmarked. For **MODIFIED** requirements, do NOT add `[testable]` — copy the existing main-spec heading verbatim (keep `[testable]` only if the main-spec original already has it), because archive matches requirement names by exact string; adding the mark to a heading whose main-spec original lacks it breaks archive.
+
+**Negative scenario marking (required for [testable] requirements):** every error-path/abnormal scenario under a `[testable]` requirement SHALL be marked `[negative]` in its heading — e.g. `#### Scenario: Reject request with non-IPv4 URI [negative]`. A `[testable]` requirement MUST have ≥1 `[negative]` scenario; the validator errors (not warns) otherwise. This is structural, not a keyword guess — it replaces the old heuristic that missed requirements whose author didn't write an error scenario (the a4adapter root cause). Legitimate-boundary scenarios (empty/extreme/large valid inputs) are positive — do NOT mark them `[negative]`.
+
+This `[testable]` mark is the contract Stage 5b consumes: every `[testable]` requirement's scenarios MUST each get ≥1 test-plan Case, and `/specpower:verify` Pass 4 FAILs if a testable change has no `test-plan.md`. Marking is what makes "tests are mandatory" enforceable instead of advisory.
+
 ### Gate: Specs Confirmation (optional light gate)
 
 Briefly summarize the delta specs generated. Accept a quick acknowledgement from the user ("looks good" / "continue") and proceed. If the user raises substantive objections, pause and revise — otherwise continue directly to Stage 4. This is an optional checkpoint, not a full hard gate; deeper scrutiny will happen in `/specpower:refine`.
