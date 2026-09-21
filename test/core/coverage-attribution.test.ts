@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { attributeCoverage, normalizePath, overallBranchCoverage, parseLcovBranchCoverage, parseJacocoBranchCoverage } from '../../src/core/coverage-attribution.js';
-import { writeFileSync, rmSync, mkdtempSync } from 'node:fs';
+import { writeFileSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { TestCase } from '../../src/core/parsers/test-plan-parser.js';
@@ -277,5 +277,128 @@ describe('parseJacocoBranchCoverage sourcefilename key', () => {
     const m = parseJacocoBranchCoverage(path);
     expect(m.get('Foo.java')).toBe(75); // 3/(1+3)
     expect(m.has('pkg/Foo.java')).toBe(false); // not keyed by package path
+  });
+
+  it('uses class-level aggregate counter, not method-level (real jacoco) [jacoco-T2]', () => {
+    // Real jacoco: <class> body has method-level <counter> nested in <method>,
+    // then the class-level aggregate <counter> (the correct one to use).
+    // method bar: missed=1 covered=2; method baz: missed=0 covered=3;
+    // class aggregate: missed=1 covered=5. We must use class (5/6=83%), not the
+    // first method (2/3=67%) — this is the bug the fix addresses.
+    const xml = [
+      '<?xml version="1.0"?>',
+      '<report>',
+      '  <class name="pkg/Foo" sourcefilename="Foo.java">',
+      '    <method name="bar"><counter type="BRANCH" missed="1" covered="2"/></method>',
+      '    <method name="baz"><counter type="BRANCH" missed="0" covered="3"/></method>',
+      '    <counter type="BRANCH" missed="1" covered="5"/>',
+      '  </class>',
+      '</report>',
+      '',
+    ].join('\n');
+    const path = join(dir, 'jacoco.xml');
+    writeFileSync(path, xml);
+    const m = parseJacocoBranchCoverage(path);
+    expect(m.get('Foo.java')).toBe(83); // class-level 5/(1+5)=83%, NOT method bar 67%
+  });
+
+  it('throws on truncated jacoco (<class> without </class>) [jacoco-T3]', () => {
+    const xml = [
+      '<?xml version="1.0"?>',
+      '<report>',
+      '  <class name="pkg/Foo" sourcefilename="Foo.java">',
+      '    <counter type="BRANCH" missed="1" covered="2"/>',
+      // missing </class> and </report> — truncated
+      '',
+    ].join('\n');
+    const path = join(dir, 'jacoco.xml');
+    writeFileSync(path, xml);
+    expect(() => parseJacocoBranchCoverage(path)).toThrow(/Malformed jacoco/);
+  });
+
+  it('skips classes without sourcefilename (no misleading fallback key) [jacoco-T4]', () => {
+    const xml = [
+      '<?xml version="1.0"?>',
+      '<report>',
+      '  <class name="pkg/NoSource">',
+      '    <counter type="BRANCH" missed="1" covered="2"/>',
+      '  </class>',
+      '  <class name="pkg/Foo" sourcefilename="Foo.java">',
+      '    <counter type="BRANCH" missed="1" covered="3"/>',
+      '  </class>',
+      '</report>',
+      '',
+    ].join('\n');
+    const path = join(dir, 'jacoco.xml');
+    writeFileSync(path, xml);
+    const m = parseJacocoBranchCoverage(path);
+    expect(m.has('NoSource')).toBe(false); // skipped (no sourcefilename)
+    expect(m.has('unknown')).toBe(false); // no misleading fallback key
+    expect(m.get('Foo.java')).toBe(75);
+  });
+});
+
+describe('attributeChangeCoverage jacoco end-to-end (T33)', () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'attr-jacoco-e2e-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('jacoco + full-path covers: false-FAILs (basename mismatch) [attr-jacoco-T1]', async () => {
+    const { attributeChangeCoverage } = await import('../../src/core/coverage-attribution.js');
+    // jacoco report: Foo.java class-level 5/6 = 83%.
+    const xml = [
+      '<?xml version="1.0"?>',
+      '<report>',
+      '  <class name="pkg/Foo" sourcefilename="Foo.java">',
+      '    <counter type="BRANCH" missed="1" covered="5"/>',
+      '  </class>',
+      '</report>',
+      '',
+    ].join('\n');
+    const reportPath = join(dir, 'jacoco.xml');
+    writeFileSync(reportPath, xml);
+    // test-plan with a Case whose covers: is the FULL package path (not basename).
+    // This must NOT match jacoco's sourcefilename basename key → 0% → false FAIL.
+    const changeDir = join(dir, 'change');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'test-plan.md'),
+      ['## Capability: cap', '',
+       '### Requirement: R → Scenario: s', '',
+       '- **Case** T1: jacoco full-path [negative]',
+       '  - Input: foo()', '  - Expected: reject', '  - it(): jacoco fullpath',
+       '  - branch: jacoco-fullpath', '  - covers: com/pkg/Foo.java', ''].join('\n'));
+    const r = await attributeChangeCoverage(changeDir, reportPath, 75);
+    expect(r.scenarios).toHaveLength(1);
+    // full path does not match basename key → 0% → FAIL
+    expect(r.scenarios[0].branchPct).toBe(0);
+    expect(r.scenarios[0].pass).toBe(false);
+    expect(r.pass).toBe(false);
+  });
+
+  it('jacoco + basename covers: PASSes when matched [attr-jacoco-T2]', async () => {
+    const { attributeChangeCoverage } = await import('../../src/core/coverage-attribution.js');
+    const xml = [
+      '<?xml version="1.0"?>',
+      '<report>',
+      '  <class name="pkg/Foo" sourcefilename="Foo.java">',
+      '    <counter type="BRANCH" missed="1" covered="5"/>',
+      '  </class>',
+      '</report>',
+      '',
+    ].join('\n');
+    const reportPath = join(dir, 'jacoco.xml');
+    writeFileSync(reportPath, xml);
+    const changeDir = join(dir, 'change');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'test-plan.md'),
+      ['## Capability: cap', '',
+       '### Requirement: R → Scenario: s', '',
+       '- **Case** T1: jacoco basename [negative]',
+       '  - Input: foo()', '  - Expected: reject', '  - it(): jacoco basename',
+       '  - branch: jacoco-basename', '  - covers: Foo.java', ''].join('\n'));
+    const r = await attributeChangeCoverage(changeDir, reportPath, 75);
+    expect(r.scenarios[0].branchPct).toBe(83); // 5/(1+5)
+    expect(r.scenarios[0].pass).toBe(true);
+    expect(r.pass).toBe(true);
   });
 });

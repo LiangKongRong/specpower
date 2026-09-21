@@ -211,24 +211,59 @@ function parseLcovContent(content: string): Map<string, { hit: number; total: nu
  */
 export function parseJacocoBranchCoverage(xmlPath: string): Map<string, number> {
   const content = readFileSync(xmlPath, 'utf-8');
-  return parseJacocoContent(content);
+  // Derive pct from raw for the per-file map API (back-compat).
+  const raw = parseJacocoContent(content);
+  const out = new Map<string, number>();
+  for (const [file, { covered, missed }] of raw) {
+    const total = covered + missed;
+    if (total > 0) out.set(file, Math.round((covered / total) * 100));
+  }
+  return out;
 }
 
 /**
- * Parse jacoco content (shared, pure). Returns Map<sourcefile basename, branch%>.
+ * Parse jacoco content into raw per-sourcefile {covered, missed} branch counts
+ * (shared by per-file and overall callers). Pure (no I/O). Returns raw counts
+ * so overallBranchCoverage can aggregate without a second parse (avoids
+ * double-parse drift); per-file callers derive pct.
+ *
+ * Class-level counters only: a real jacoco <class> body contains method-level
+ * <counter> elements nested inside <method>...</method> (per-method branch
+ * counts), followed by the class-level aggregate <counter type="BRANCH">. We
+ * must use the class-level aggregate, NOT a method-level counter (which would
+ * undercount severely for multi-method classes). We strip <method>...</method>
+ * blocks from the class body before selecting the BRANCH counter, so only the
+ * class-level (direct-child) counter remains.
+ *
+ * Key: sourcefilename basename (standard jacoco). Classes without a
+ * sourcefilename are skipped (the name= fallback key never matches `covers:`
+ * basenames and would silently skew the per-Scenario min). For --overall the
+ * aggregate is key-independent.
  */
-function parseJacocoContent(content: string): Map<string, number> {
-  const out = new Map<string, number>();
-  const perFile: Map<string, { covered: number; missed: number }> = new Map();
+function parseJacocoContent(content: string): Map<string, { covered: number; missed: number }> {
+  const out = new Map<string, { covered: number; missed: number }>();
+  // Minimal integrity: a jacoco report is wrapped in a root <report> (or
+  // <sessioninfo>/<report>). A truncated XML (half-written from an aborted run)
+  // may lack the closing root tag. We do not fully parse XML, but we refuse an
+  // obviously-truncated report: require at least one <class>...</class> pair
+  // and a closing </report> (or </sessioninfo>) if a root open tag is present.
+  const hasClassPair = /<class[\s>][\s\S]*?<\/class>/.test(content);
+  if (!hasClassPair && /<class/.test(content)) {
+    // <class> opened but never closed → truncated/malformed.
+    throw new Error('Malformed jacoco: <class> opened but never closed — report is truncated or malformed (refuse to compute coverage from partial data)');
+  }
   const tagRe = /<class\s+([^>]*)>([\s\S]*?)<\/class>/g;
   let m: RegExpExecArray | null;
   while ((m = tagRe.exec(content)) !== null) {
     const classAttrs = m[1];
     const body = m[2];
     const sfMatch = /sourcefilename="([^"]+)"/.exec(classAttrs);
-    const nameMatch = /\bname="([^"]+)"/.exec(classAttrs);
-    const file = normalizePath(sfMatch ? sfMatch[1] : (nameMatch ? nameMatch[1].split('/').pop()! : 'unknown'));
-    const counterMatch = /<counter\s+[^>]*type="BRANCH"[^>]*\/>/.exec(body);
+    if (!sfMatch) continue; // skip classes without sourcefilename (fallback keys never match covers:)
+    const file = normalizePath(sfMatch[1]);
+    // Strip <method>...</method> blocks so only class-level (direct-child)
+    // counters remain — avoids picking a method-level counter.
+    const classLevelBody = body.replace(/<method[\s>][\s\S]*?<\/method>/g, '');
+    const counterMatch = /<counter\s+[^>]*type="BRANCH"[^>]*\/>/.exec(classLevelBody);
     if (!counterMatch) continue;
     const counterTag = counterMatch[0];
     const missedMatch = /missed="(\d+)"/.exec(counterTag);
@@ -236,14 +271,10 @@ function parseJacocoContent(content: string): Map<string, number> {
     if (!missedMatch || !coveredMatch) continue;
     const missed = parseInt(missedMatch[1], 10);
     const covered = parseInt(coveredMatch[1], 10);
-    const cur = perFile.get(file) ?? { covered: 0, missed: 0 };
+    const cur = out.get(file) ?? { covered: 0, missed: 0 };
     cur.covered += covered;
     cur.missed += missed;
-    perFile.set(file, cur);
-  }
-  for (const [file, { covered, missed }] of perFile) {
-    const total = covered + missed;
-    if (total > 0) out.set(file, Math.round((covered / total) * 100));
+    out.set(file, cur);
   }
   return out;
 }
@@ -300,43 +331,13 @@ export function overallBranchCoverage(reportPath: string, threshold = 75): Overa
   const perFile: { file: string; hit: number; total: number; pct: number }[] = [];
 
   if (reportPath.endsWith('.xml') || reportPath.endsWith('jacoco.xml')) {
-    // jacoco: sum <counter type="BRANCH" missed/covered> per <class>. Standard
-    // jacoco emits <class name="com/pkg/Class" sourcefilename="Class.java"> —
-    // NOT filename="full/path". The per-source-file key is the sourcefilename
-    // basename (jacoco does not carry the package path on <class>; the package
-    // is on <package name="com/pkg">, the sourcefile on <sourcefile name="Class.java">).
-    // We key per-source-file by sourcefilename basename. For --overall the
-    // aggregate is correct (key-independent). For per-Scenario attribution,
-    // `covers:` paths must therefore be basenames (e.g. `DeviceManagementService.java`)
-    // to match jacoco's sourcefilename — documented as a known limitation.
-    // Parse attributes order-independently (counter attributes may be reordered
-    // by XSL transforms); extract each attribute by name, not by position.
-    const perFileAgg: Map<string, { covered: number; missed: number }> = new Map();
-    const tagRe = /<class\s+([^>]*)>([\s\S]*?)<\/class>/g;
-    let cm: RegExpExecArray | null;
-    while ((cm = tagRe.exec(content)) !== null) {
-      const classAttrs = cm[1];
-      const body = cm[2];
-      // sourcefilename="Class.java" (basename). Fall back to name="com/pkg/Class"
-      // basename if sourcefilename absent (non-standard but defensive).
-      const sfMatch = /sourcefilename="([^"]+)"/.exec(classAttrs);
-      const nameMatch = /\bname="([^"]+)"/.exec(classAttrs);
-      const file = normalizePath(sfMatch ? sfMatch[1] : (nameMatch ? nameMatch[1].split('/').pop()! : 'unknown'));
-      // Counter: order-independent attribute parsing.
-      const counterMatch = /<counter\s+[^>]*type="BRANCH"[^>]*\/>/.exec(body);
-      if (!counterMatch) continue;
-      const counterTag = counterMatch[0];
-      const missedMatch = /missed="(\d+)"/.exec(counterTag);
-      const coveredMatch = /covered="(\d+)"/.exec(counterTag);
-      if (!missedMatch || !coveredMatch) continue;
-      const missed = parseInt(missedMatch[1], 10);
-      const covered = parseInt(coveredMatch[1], 10);
-      const cur = perFileAgg.get(file) ?? { covered: 0, missed: 0 };
-      cur.covered += covered;
-      cur.missed += missed;
-      perFileAgg.set(file, cur);
-    }
-    for (const [file, { covered, missed }] of perFileAgg) {
+    // jacoco: parseJacocoContent returns raw per-sourcefile {covered, missed}
+    // (class-level counters only — method-level counters stripped), keyed by
+    // sourcefilename basename. Aggregate directly (no second parse; key-
+    // independent for --overall). Throws on truncated/malformed (no false PASS
+    // from partial data).
+    const perFileMap = parseJacocoContent(content);
+    for (const [file, { covered, missed }] of perFileMap) {
       const t = covered + missed;
       if (t === 0) continue;
       total += t;

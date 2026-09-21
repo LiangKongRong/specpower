@@ -63,7 +63,15 @@ export function registerCoverageAttributionCommand(program: Command): void {
 
       // --- --overall mode: project-wide aggregate branch coverage gate ---
       if (opts.overall) {
-        const overall = overallBranchCoverage(reportPath, threshold);
+        let overall;
+        try {
+          overall = overallBranchCoverage(reportPath, threshold);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`Coverage attribution failed: ${message}`);
+          process.exitCode = 1;
+          return;
+        }
         console.info(`Coverage report: ${reportPath}`);
         console.info(`Threshold: ${threshold}% (overall aggregate)\n`);
         console.info(`Overall branch coverage: ${overall.branchPct}% (${overall.hitBranches}/${overall.totalBranches}) — ${overall.pass ? 'PASS' : 'FAIL'}`);

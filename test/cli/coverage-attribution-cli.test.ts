@@ -97,4 +97,47 @@ describeOrSkip('coverage-attribution CLI (action handler)', () => {
     expect(r.status).not.toBe(0);
     expect(r.stderr.toLowerCase() + r.stdout.toLowerCase()).toMatch(/malformed|truncat/i);
   });
+
+  it('per-Scenario <change-name> mode: PASS when covers: files >= threshold [cli-scenario-T1]', () => {
+    const lcov = ['SF:src/a.ts', 'BRDA:1,0,0,1', 'BRDA:2,1,0,1', 'end_of_record', ''].join('\n');
+    setupProject(lcov);
+    const changeDir = join(dir, 'specpower', 'changes', 'c1');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'test-plan.md'),
+      ['## Capability: cap', '',
+       '### Requirement: R → Scenario: s', '',
+       '- **Case** T1: pass [negative]',
+       '  - Input: foo()', '  - Expected: reject', '  - it(): pass',
+       '  - branch: pass', '  - covers: src/a.ts', ''].join('\n'));
+    const r = runCli(dir, ['coverage-attribution', 'c1', '--threshold', '75']);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('[PASS]');
+    expect(r.stdout).toContain('PASS — all');
+  });
+
+  it('per-Scenario <change-name> mode: FAIL when a Scenario below threshold [cli-scenario-T2]', () => {
+    // a.ts: 1 hit / 2 total (one '1', one '0') = 50% < 75%.
+    const lcov = ['SF:src/a.ts', 'BRDA:1,0,0,1', 'BRDA:2,1,0,0', 'end_of_record', ''].join('\n');
+    setupProject(lcov);
+    const changeDir = join(dir, 'specpower', 'changes', 'c2');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'test-plan.md'),
+      ['## Capability: cap', '',
+       '### Requirement: R → Scenario: s', '',
+       '- **Case** T1: low [negative]',
+       '  - Input: foo()', '  - Expected: reject', '  - it(): low',
+       '  - branch: low', '  - covers: src/a.ts', ''].join('\n'));
+    const r = runCli(dir, ['coverage-attribution', 'c2', '--threshold', '75']);
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain('[FAIL]');
+    expect(r.stdout).toContain('FAIL —');
+  });
+
+  it('per-Scenario <change-name> mode: missing change fails with not-found [cli-scenario-T3]', () => {
+    const lcov = ['SF:src/a.ts', 'BRDA:1,0,0,1', 'end_of_record', ''].join('\n');
+    setupProject(lcov);
+    const r = runCli(dir, ['coverage-attribution', 'no-such-change', '--threshold', '75']);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr.toLowerCase()).toContain('not found');
+  });
 });
