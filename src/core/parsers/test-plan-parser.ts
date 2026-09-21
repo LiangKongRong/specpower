@@ -10,12 +10,39 @@ export interface TestCase {
   readonly expected: string;
   readonly itName: string;
   readonly file?: string;
+  /**
+   * Optional: the product source file(s) this Case's test exercises, used by
+   * `/specpower:verify` Pass 5 to attribute per-file branch coverage back to
+   * the Scenario. One or more comma/space-separated paths relative to the
+   * project root (e.g. `src/cli/commands/init.ts`). When omitted, the Case is
+   * not attributed a coverage figure (Pass 5 reports `no covers:`).
+   */
+  readonly covers?: string;
+  /**
+   * Optional (for `[negative]` Cases): the product error branch this Case tests
+   * — a short stable identifier of the branch in the function-under-test (e.g.
+   * `validate-null-name`, `auth-reject`, `duplicate-device`). Used by
+   * `checkCoverage` to count DISTINCT error branches (not Cases) for the
+   * negative-ratio floor, so a requirement with 1 error branch cannot pad its
+   * ratio by adding multiple negative Cases that all test that same branch.
+   * A reviewer cross-checks `branch:` against the actual code branches.
+   * When omitted on a negative Case, the Case is counted individually (legacy
+   * behavior) but a `missing-branch-tag` warning is emitted so the reviewer
+   * knows the distinct-branch floor is not enforced for that Case.
+   */
+  readonly branch?: string;
 }
 
 const CASE_LINE = /^-\s+\*\*Case\*\*\s+(?<id>T\d+):\s+(?<desc>.+?)\s+\[(?<mark>positive|negative)\]\s*$/;
-const FIELD_LINE = /^\s+-\s+(?<k>Input|Expected|it\(\)|file):\s*(?<v>.+?)\s*$/;
+const FIELD_LINE = /^\s+-\s+(?<k>Input|Expected|it\(\)|file|covers|branch):\s*(?<v>.+?)\s*$/;
 const CAPABILITY = /^##\s+Capability:\s*(?<cap>.+?)\s*$/;
 const REQ_SCEN = /^###\s+Requirement:\s*(?<req>.+?)\s+→\s+Scenario:\s*(?<scen>.+?)\s*$/;
+// Strip trailing metadata markers ([testable]/[negative]) from requirement and
+// scenario names in test-plan headers, so they match spec scenario names (which
+// are also stripped). Without this, a test-plan `### Requirement: Foo [testable] →`
+// would never match a spec scenario under requirement `Foo`.
+const TESTABLE_MARKER = /\s+\[testable\]\s*$/i;
+const NEGATIVE_MARKER = /\s+\[negative\]\s*$/i;
 
 export function parseTestPlan(content: string): TestCase[] {
   const lines = content.split(/\r?\n/);
@@ -33,6 +60,8 @@ export function parseTestPlan(content: string): TestCase[] {
       expected: cur._fields['Expected'] ?? '',
       itName: cur._fields['it()'] ?? '',
       file: cur._fields['file'],
+      covers: cur._fields['covers'],
+      branch: cur._fields['branch'],
     });
     cur = null;
   };
@@ -41,7 +70,7 @@ export function parseTestPlan(content: string): TestCase[] {
     const cm = CAPABILITY.exec(line);
     if (cm) { flush(); cap = cm.groups!.cap; continue; }
     const rsm = REQ_SCEN.exec(line);
-    if (rsm) { flush(); req = rsm.groups!.req; scen = rsm.groups!.scen; continue; }
+    if (rsm) { flush(); req = rsm.groups!.req.replace(TESTABLE_MARKER, '').trim(); scen = rsm.groups!.scen.replace(NEGATIVE_MARKER, '').trim(); continue; }
     const cl = CASE_LINE.exec(line);
     if (cl) {
       flush();

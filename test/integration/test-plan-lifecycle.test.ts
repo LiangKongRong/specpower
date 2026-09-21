@@ -78,6 +78,7 @@ describe('test-plan lifecycle (e2e)', () => {
         '  - Input: resolveTool("nope")',
         '  - Expected: throw /Unknown tool "nope"/',
         '  - it(): throws on unknown tool id [demo-T1]',
+        '  - branch: unknown-tool-id',
       ].join('\n'),
       'utf-8',
     );

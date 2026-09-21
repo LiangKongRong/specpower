@@ -32,12 +32,16 @@ Use `##` headers for delta operation sections. Use `###` for requirements. Use `
 ```markdown
 ## ADDED Requirements
 
-### Requirement: <requirement name>
+### Requirement: <requirement name> [testable]
 <Description using SHALL/MUST for normative language.>
 
 #### Scenario: <scenario name>
 - **WHEN** <precondition or trigger>
 - **THEN** <expected outcome>
+
+#### Scenario: <error/boundary scenario name> [negative]
+- **WHEN** <invalid/boundary condition>
+- **THEN** <error handling, rejection, or graceful degradation>
 
 #### Scenario: <another scenario>
 - **WHEN** <condition>
@@ -47,6 +51,7 @@ Use `##` headers for delta operation sections. Use `###` for requirements. Use `
 
 ### Requirement: <existing requirement name>
 <Full updated description — MUST include complete content, not just the diff.>
+<Note: MODIFIED requirement headings MUST match the existing main-spec heading EXACTLY (whitespace-insensitive). If the main spec heading carries `[testable]`, keep it; if not, do NOT add it here — adding `[testable]` to a heading whose main-spec original lacks it breaks archive name-matching. `[testable]` is added only on ADDED requirements (or when the main-spec original already has it).>
 
 #### Scenario: <scenario name>
 - **WHEN** <condition>
@@ -67,6 +72,8 @@ TO: <new requirement name>
 **Format rules:**
 - Each requirement: `### Requirement: <name>` followed by description
 - Use SHALL/MUST for normative requirements (avoid should/may)
+- **Testability marking (required):** append ` [testable]` to the heading of every **ADDED** `### Requirement:` that contains ≥1 `#### Scenario:` with runtime-assertable behavior — a function return value, a CLI exit code, an emitted message/log, a persisted state transition, or a rejected error. Pure-declarative requirements (format/style conventions only, no runtime behavior to assert) are left unmarked. For **MODIFIED** requirements, do NOT add `[testable]` — copy the existing main-spec heading verbatim (keep `[testable]` only if the main-spec original already has it), because archive matches requirement names by exact string. The `[testable]` mark is the contract `test-plan-draft.md` consumes: every `[testable]` requirement's scenarios MUST each get ≥1 test-plan Case. Marking is what makes "every scenario gets a test" enforceable — without it, test-plan coverage and `/specpower:verify` Pass 4 cannot tell testable requirements from declarative ones, and a4adapter-style "spec present, tests absent" gaps return.
+- **Negative scenario marking (required for [testable] requirements):** mark every error-path/abnormal scenario with a trailing ` [negative]` — `#### Scenario: <name> [negative]`. A `[testable]` requirement MUST have ≥1 `[negative]` scenario; the validator errors (not warns) otherwise. This is structural, not heuristic — it replaces the old guess-by-scenario-name keyword matching (which missed requirements whose author simply didn't write an error scenario). Legitimate-boundary scenarios (empty/extreme/large valid inputs) are positive, not negative — do NOT mark them `[negative]`.
 - Each scenario: `#### Scenario: <name>` — **MUST use exactly 4 hashtags (`####`)**. Using 3 hashtags will fail validation silently.
 - Scenario steps: `- **WHEN** <condition>` and `- **THEN** <outcome>` — **MUST use bullet dash + bold format**
 - Every requirement MUST have at least one scenario
@@ -120,7 +127,7 @@ Save each spec file. Then present a summary:
   - **Resource exhaustion to failure**: timeout, disk full, rate limit exceeded
   - Target: ≥ 1 negative scenario per requirement. For side-effect-bearing capabilities, aim for ≥ 30% negative; pure-function capabilities may naturally be lower (15-30%).
   - **Important**: legitimate boundary values (empty collection, extreme values, large inputs) are **positive** scenarios if the function accepts them as valid input — do NOT count them as negative to pad the ratio. See `prompts/reference/specpower/negative-testing-guide.md` for the positive/negative distinction.
-- **Specs are testable** — each scenario is a potential test case
+- **Specs are testable — and tests are mandatory** — each scenario is a potential test case; each `[testable]` requirement's scenarios MUST each get ≥1 test-plan Case in `test-plan.md`, and `/specpower:build` Phase B TDD hard gate requires a failing test before each testable task passes. A scenario with no corresponding test is a coverage hole, not an acceptable artifact.
 - **No implementation details** — describe behavior, not how to build it
 
 ## Next Step

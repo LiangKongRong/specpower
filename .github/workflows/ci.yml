@@ -39,8 +39,8 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Run tests
-        run: npm test
+      - name: Run tests with coverage gate
+        run: npm run test:cov
 
       - name: Verify package contents
         run: npm pack --dry-run

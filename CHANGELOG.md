@@ -14,6 +14,36 @@
 
 _尚未发布的变更记录在此。发布时移到新的版本标题下。_
 
+## [0.2.3-9] - 2026-09-21
+
+### Added
+
+- **30%/75% 覆盖契约**:`test-planning` baseline spec 升级——`[testable]` requirement 必须有 ≥1 `[negative]` scenario(结构性 error,替代关键字启发式);30% distinct-`branch:` 负向比例门禁(`low-negative-ratio`/`duplicate-branch`/`missing-branch-tag`);build Phase B B2b 跑 `specpower validate`;verify Pass 4 hard gate + Pass 5 75% branch gate。
+- **`coverage-attribution` capability**:新 CLI `specpower coverage-attribution`——`--overall` 整体聚合 75% 门禁(适用 legacy 无标注项目)+ per-Scenario 归因(经 `covers:` 字段);支持 lcov(v8/istanbul)与 jacoco 解析。
+- **`[testable]`/`[negative]`/`branch:`/`covers:` 标注体系**:spec/test-plan 显式标注,替代启发式判定;`branch:` distinct 计数防注水。
+- **vitest 覆盖率门禁**:thresholds 调至 75,CI 跑 `test:cov`(ci.yml + release.yml)。
+- **anti-water-injection**:`duplicate-branch` 报告共享 branch tag 的 Cases(注水痕迹)。
+
+### Fixed
+
+- **v8 lcov `0` 未命中分支**:v8 lcov 用 `0`(非 `-`)表示可达但未执行分支,parser 现把 `0` 与 `-` 都算未命中(原误报 100% 假 PASS)。
+- **lcov/jacoco 截断完整性检查**:`parseLcovContent` 检 SF/end_of_record 计数;`parseJacocoContent` 检 `<class>` open/close 计数——截断报告抛错而非从部分数据假 PASS。
+- **jacoco class-level vs method-level counter**:剥离 `<method>` 块后取 class-level 聚合 counter(原取第一个 method-level counter 严重低估)。
+- **jacoco `sourcefilename` key**:标准 jacoco `<class sourcefilename="Foo.java">`(非 `filename=`),按 basename key + 逐属性解析(顺序无关)。
+- **`validate <spec>` 多 capability test-plan dangling**:按 spec 路径推断 capability 过滤 Cases,空集 fallback + mismatch 警告。
+
+### Changed
+
+- **failure-admitting 判定脱离关键字启发式**:改为 `[testable]` 显式标注(opt-in)。
+- **`missing-branch-tag` 为 warning**(向后兼容),`duplicate-branch`/`low-negative-ratio` 为 error。
+- `coverage-attribution` CLI `--overall` 加 try/catch,与 per-Scenario 模式错误呈现一致。
+
+### Known Limitations
+
+- 30% floor 是 opt-in(需标 `[testable]`);未标注的可测 requirement 逃过(留给 `specpower-scan` v0.3)。
+- 75% overall 是 floor 非 ceiling(低覆盖文件可被掩盖,`lowFiles` 揭示但不 FAIL);per-Scenario 是文件级归因(需 `covers:`,非 per-test)。
+- jacoco per-Scenario `covers:` 须用 sourcefilename basename(全路径不匹配)。
+
 ## [0.2.2] - 2026-04-26
 
 文档/skill 热修，显式标记 `/specpower:scan` 为 v0.3 规划中。NOT BREAKING。

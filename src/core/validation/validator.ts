@@ -21,6 +21,8 @@ import {
   REASON_LINE,
   FROM_LINE,
   TO_LINE,
+  TESTABLE_MARKER,
+  NEGATIVE_MARKER,
 } from './constants.js';
 
 /**
@@ -124,6 +126,7 @@ interface RequirementCoverage {
   readonly line: number;
   readonly totalScenarios: number;
   readonly negativeScenarios: number;
+  readonly testable: boolean;
 }
 
 function validateRequirementSection(
@@ -169,6 +172,7 @@ function validateRequirementSection(
   // Parse requirements and validate each has at least one scenario with WHEN/THEN
   let currentReqName: string | null = null;
   let currentReqLine = 0;
+  let currentReqTestable = false;
   let scenarioCount = 0;
   let negativeCount = 0;
   let scenariosForCurrent: { name: string; line: number; hasWhen: boolean; hasThen: boolean }[] = [];
@@ -195,12 +199,24 @@ function validateRequirementSection(
           });
         }
       }
-      // Track coverage for negative-scenario warning
+      // [testable] requirement MUST have >=1 negative scenario (structural,
+      // not heuristic). This is the floor that makes "tests are mandatory"
+      // enforceable: a [testable] requirement with zero error-path scenarios
+      // is a coverage hole (a4adapter-style "spec present, tests absent").
+      if (currentReqTestable && scenarioCount > 0 && negativeCount === 0) {
+        errors.push({
+          message: `Requirement "${currentReqName}" is marked [testable] but has no [negative] scenario — add at least one error-path scenario (mark it \`#### Scenario: <name> [negative]\`)`,
+          line: currentReqLine,
+        });
+      }
+      // Track coverage for negative-scenario warning (non-testable requirements
+      // still get the heuristic warn for zero negatives, for back-compat).
       coverageTracker.push({
         name: currentReqName,
         line: currentReqLine,
         totalScenarios: scenarioCount,
         negativeScenarios: negativeCount,
+        testable: currentReqTestable,
       });
     }
   };
@@ -219,7 +235,9 @@ function validateRequirementSection(
         currentScenario = null;
       }
       flushReq();
-      currentReqName = reqMatch[1].trim();
+      const rawName = reqMatch[1].trim();
+      currentReqTestable = TESTABLE_MARKER.test(rawName);
+      currentReqName = rawName.replace(TESTABLE_MARKER, '').trim();
       currentReqLine = lineNum;
       scenarioCount = 0;
       negativeCount = 0;
@@ -233,8 +251,12 @@ function validateRequirementSection(
         scenariosForCurrent.push(currentScenario);
       }
       scenarioCount++;
-      const scenarioName = scMatch[1].trim();
-      if (isLikelyNegativeScenario(scenarioName)) {
+      const rawName = scMatch[1].trim();
+      const isExplicitNegative = NEGATIVE_MARKER.test(rawName);
+      const scenarioName = rawName.replace(NEGATIVE_MARKER, '').trim();
+      // A scenario is negative if explicitly marked [negative], OR (back-compat)
+      // its name matches the negative-keyword heuristic for unmarked specs.
+      if (isExplicitNegative || isLikelyNegativeScenario(scenarioName)) {
         negativeCount++;
       }
       currentScenario = { name: scenarioName, line: lineNum, hasWhen: false, hasThen: false };

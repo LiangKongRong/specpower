@@ -23,6 +23,9 @@ export interface ValidationResult {
 export type TestPlanIssueKind =
   | 'uncovered-scenario'
   | 'missing-negative'
+  | 'low-negative-ratio'
+  | 'duplicate-branch'
+  | 'missing-branch-tag'
   | 'orphan-case'
   | 'duplicate-id'
   | 'duplicate-it-name'

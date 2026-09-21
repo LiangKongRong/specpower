@@ -19,6 +19,8 @@ import { validateSpec } from '../../core/validation/validator.js';
 import {
   SCENARIO_HEADER_CORRECT,
   REQUIREMENT_HEADER,
+  TESTABLE_MARKER,
+  NEGATIVE_MARKER,
 } from '../../core/validation/constants.js';
 import type { ValidationError, ValidationResult, ValidationWarning } from '../../core/validation/types.js';
 import { parseTestPlanFile, findMalformedCases } from '../../core/parsers/test-plan-parser.js';
@@ -85,23 +87,45 @@ function findChangeRoot(specPath: string): string | null {
 }
 
 /**
+ * Infer the capability name from a spec file path of the form
+ * `.../specs/<capability>/spec.md`. Returns null if the path does not match
+ * this shape (so the caller falls back to using all Cases).
+ */
+function inferCapability(specPath: string): string | null {
+  const dir = dirname(specPath);
+  const parent = dirname(dir);
+  if (basename(parent) === 'specs' && basename(specPath) === 'spec.md') {
+    return basename(dir);
+  }
+  return null;
+}
+
+/**
  * Extract delta scenarios (requirement + scenario name pairs) from a spec
  * markdown string by scanning `### Requirement:` and `#### Scenario:` headers.
+ * Requirement `[testable]` and scenario `[negative]` trailing markers are
+ * stripped from the names (they are metadata, not part of the name) so names
+ * match across spec, test-plan, and main-spec archive.
  */
-function extractDeltaScenarios(content: string): { requirement: string; scenario: string }[] {
+function extractDeltaScenarios(content: string): { requirement: string; scenario: string; testable: boolean }[] {
   const normalized = content.replace(/\r\n?/g, '\n');
   const lines = normalized.split('\n');
-  const out: { requirement: string; scenario: string }[] = [];
+  const out: { requirement: string; scenario: string; testable: boolean }[] = [];
   let currentReq = '';
+  let currentReqTestable = false;
   for (const line of lines) {
     const rm = REQUIREMENT_HEADER.exec(line);
     if (rm) {
-      currentReq = rm[1].trim();
+      const raw = rm[1].trim();
+      currentReqTestable = TESTABLE_MARKER.test(raw);
+      currentReq = raw.replace(TESTABLE_MARKER, '').trim();
       continue;
     }
     const sm = SCENARIO_HEADER_CORRECT.exec(line);
     if (sm) {
-      out.push({ requirement: currentReq, scenario: sm[1].trim() });
+      const raw = sm[1].trim();
+      const scenario = raw.replace(NEGATIVE_MARKER, '').trim();
+      out.push({ requirement: currentReq, scenario, testable: currentReqTestable });
     }
   }
   return out;
@@ -147,54 +171,82 @@ async function checkTestPlan(
   }
 
   const cases = await parseTestPlanFile(testPlanPath);
+  // Filter to Cases whose capability matches the spec being validated. A
+  // change's test-plan may span multiple capabilities (one `## Capability:`
+  // per group); validate <file> checks one spec file, so only that spec's
+  // capability's Cases are relevant — cross-capability Cases would otherwise
+  // all dangle (their Scenarios live in other spec files). The capability is
+  // inferred from the spec path `.../specs/<capability>/spec.md`.
+  const specCapability = inferCapability(specPath);
+  let relevantCases = cases;
+  if (specCapability) {
+    const filtered = cases.filter((c) => c.capability === specCapability);
+    // Foot-gun guard: if the filter produced zero Cases but Cases exist, the
+    // test-plan's `## Capability:` names do not match the spec's directory name
+    // (e.g. author wrote `## Capability: Test Planning` but the dir is
+    // `test-planning`). Rather than reporting every delta Scenario as
+    // `uncovered-scenario` (misleading), fall back to all Cases and warn so the
+    // author fixes the capability-name mismatch.
+    if (filtered.length === 0 && cases.length > 0) {
+      warnings.push({
+        message: `Capability name mismatch: spec capability "${specCapability}" (from path) matches no ` +
+          `## Capability: in test-plan.md (found: ${[...new Set(cases.map((c) => c.capability))].filter(Boolean).join(', ') || '(none)'}). ` +
+          `Falling back to all Cases; fix the ## Capability: name to match the spec directory to enable per-capability filtering.`,
+      });
+    } else {
+      relevantCases = filtered;
+    }
+  }
   const baselineScenarios = await loadBaselineScenarios(changeRoot);
   const failureAdmittingRequirements = collectFailureAdmittingRequirements(deltaScenarios);
   const result = checkCoverage({
     deltaScenarios,
-    cases,
+    cases: relevantCases,
     baselineScenarios,
     failureAdmittingRequirements,
   });
   for (const issue of result.issues) {
-    errors.push({ message: issue.message });
+    // missing-branch-tag is a backward-compat warning, not an error: existing
+    // test-plans without `branch:` tags would otherwise all fail validate.
+    // The distinct-branch floor is still enforced for tagged Cases; the warning
+    // nudges authors to add `branch:` so the floor also covers their Cases.
+    // duplicate-branch and low-negative-ratio remain errors (real defects).
+    if (issue.issue === 'missing-branch-tag') {
+      warnings.push({ message: issue.message });
+    } else {
+      errors.push({ message: issue.message });
+    }
   }
   return { errors, warnings };
 }
 
 /**
- * Negative/error-path scenario keywords. A Requirement whose delta scenario
- * name contains any of these is treated as failure-admitting: its test-plan
- * must include at least one `[negative]` Case, or `missing-negative` is reported.
- * Mirrors the validator's NEGATIVE_SCENARIO_KEYWORDS set (inlined here because
- * that constant is not exported).
- */
-const NEGATIVE_SCENARIO_KEYWORDS = [
-  'throw', 'reject', 'invalid', 'missing', 'fail', 'error', 'deny',
-  'forbidden', 'timeout', 'exhaust', 'malform', 'corrupt', 'wrong',
-  'incorrect', 'duplicate', 'nonexistent',
-];
-
-/**
- * Heuristic: collect the set of Requirement names that own at least one delta
- * scenario whose name suggests a negative/error path (and thus the Requirement
- * admits failure). These are passed to checkCoverage so a missing-negative
- * error is raised when no `[negative]` Case covers the Requirement.
+ * Collect the set of Requirement names that are failure-admitting — i.e. that
+ * MUST have negative-case coverage in the test-plan.
+ *
+ * This is NO LONGER a keyword heuristic. A Requirement is failure-admitting
+ * when the spec author marked it `[testable]` in its heading. This makes
+ * "tests are mandatory" enforceable: the author explicitly opts a Requirement
+ * into the test-plan-coverage regime by marking it, instead of the validator
+ * guessing from scenario-name keywords (which missed requirements whose author
+ * simply didn't write an error-path scenario — the a4adapter root cause).
+ *
+ * Unmarked requirements fall back to the legacy keyword heuristic ONLY to
+ * preserve the `missing-negative` back-compat warning; the structural
+ * `[testable]` → negative floor lives in the validator (validateSpec), which
+ * errors (not warns) on a `[testable]` requirement with zero `[negative]`
+ * scenarios.
  */
 function collectFailureAdmittingRequirements(
-  deltaScenarios: readonly { requirement: string; scenario: string }[],
+  deltaScenarios: readonly { requirement: string; scenario: string; testable: boolean }[],
 ): string[] {
   const out = new Set<string>();
   for (const s of deltaScenarios) {
-    if (isLikelyNegativeScenario(s.scenario)) {
+    if (s.testable) {
       out.add(s.requirement);
     }
   }
   return [...out];
-}
-
-function isLikelyNegativeScenario(scenarioName: string): boolean {
-  const lower = scenarioName.toLowerCase();
-  return NEGATIVE_SCENARIO_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
 /**
