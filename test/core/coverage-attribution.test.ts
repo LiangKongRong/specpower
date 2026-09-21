@@ -316,6 +316,28 @@ describe('parseJacocoBranchCoverage sourcefilename key', () => {
     expect(() => parseJacocoBranchCoverage(path)).toThrow(/Malformed jacoco/);
   });
 
+  it('throws on partial truncation (some classes closed, one unclosed) [jacoco-T3b]', () => {
+    // Realistic partial-truncation: 1 closed class + 1 trailing unclosed class.
+    // The old check (hasClassPair) would NOT throw (a pair exists) and silently
+    // drop the unclosed class — potentially false-PASSing by discarding a
+    // low-coverage file. The open/close count check must throw.
+    const xml = [
+      '<?xml version="1.0"?>',
+      '<report>',
+      '  <class name="pkg/Foo" sourcefilename="Foo.java">',
+      '    <counter type="BRANCH" missed="1" covered="9"/>',
+      '  </class>',
+      '  <class name="pkg/Bar" sourcefilename="Bar.java">',
+      '    <counter type="BRANCH" missed="9" covered="1"/>',
+      // Bar's </class> missing — truncated mid-class
+      '</report>',
+      '',
+    ].join('\n');
+    const path = join(dir, 'jacoco.xml');
+    writeFileSync(path, xml);
+    expect(() => parseJacocoBranchCoverage(path)).toThrow(/Malformed jacoco.*open.*close|open\/close/i);
+  });
+
   it('skips classes without sourcefilename (no misleading fallback key) [jacoco-T4]', () => {
     const xml = [
       '<?xml version="1.0"?>',

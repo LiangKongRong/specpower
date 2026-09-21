@@ -242,15 +242,21 @@ export function parseJacocoBranchCoverage(xmlPath: string): Map<string, number> 
  */
 function parseJacocoContent(content: string): Map<string, { covered: number; missed: number }> {
   const out = new Map<string, { covered: number; missed: number }>();
-  // Minimal integrity: a jacoco report is wrapped in a root <report> (or
-  // <sessioninfo>/<report>). A truncated XML (half-written from an aborted run)
-  // may lack the closing root tag. We do not fully parse XML, but we refuse an
-  // obviously-truncated report: require at least one <class>...</class> pair
-  // and a closing </report> (or </sessioninfo>) if a root open tag is present.
-  const hasClassPair = /<class[\s>][\s\S]*?<\/class>/.test(content);
-  if (!hasClassPair && /<class/.test(content)) {
-    // <class> opened but never closed → truncated/malformed.
-    throw new Error('Malformed jacoco: <class> opened but never closed — report is truncated or malformed (refuse to compute coverage from partial data)');
+  // Integrity: count <class> open tags vs </class> close tags. A truncated
+  // jacoco (half-written from an aborted run) may have some classes closed
+  // and a trailing class left open (the realistic partial-truncation pattern:
+  // the XML writer emits classes sequentially; a mid-class termination leaves
+  // closed classes + one trailing unclosed class). Discarding the unclosed
+  // class could drop a low-coverage file and inflate the aggregate above
+  // threshold → false PASS from partial data. So we refuse the whole report on
+  // any open/close mismatch. Use <class[\s>] (requires <class followed by space
+  // or >) to avoid false-positive on <classified>/<classes>.
+  const openCount = (content.match(/<class[\s>]/g) ?? []).length;
+  const closeCount = (content.match(/<\/class>/g) ?? []).length;
+  if (openCount !== closeCount) {
+    throw new Error(
+      `Malformed jacoco: ${openCount} <class> open tag(s) but ${closeCount} </class> close tag(s) — report is truncated or malformed (refuse to compute coverage from partial data)`,
+    );
   }
   const tagRe = /<class\s+([^>]*)>([\s\S]*?)<\/class>/g;
   let m: RegExpExecArray | null;
