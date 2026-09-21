@@ -243,6 +243,48 @@ describe('overallBranchCoverage', () => {
     // (truncation is a CLI presentation concern, tested at the CLI layer).
     expect(r.pass).toBe(false); // 0% aggregate
   });
+
+  it('empty lcov report → 0% FAIL (does not throw) [overall-T9]', () => {
+    // Empty report (0 SF, 0 end_of_record) → 0=0, no throw → 0% FAIL.
+    const path = join(dir, 'lcov.info');
+    writeFileSync(path, '');
+    const r = overallBranchCoverage(path, 75);
+    expect(r.branchPct).toBe(0);
+    expect(r.totalBranches).toBe(0);
+    expect(r.hitBranches).toBe(0);
+    expect(r.pass).toBe(false); // 0% < 75%
+  });
+
+  it('realistic jacoco with <package> + <sourcefile> + <method> [overall-T10]', () => {
+    // Real jacoco structure: <report><package><class><method><counter/></method>
+    // <counter/></class><sourcefile><counter/></sourcefile></package></report>.
+    // The class-level BRANCH counter (5/6) is the one to use; method-level (2/3)
+    // and <sourcefile>-level counters must NOT be double-counted as class-level.
+    const xml = [
+      '<?xml version="1.0"?>',
+      '<report>',
+      '  <package name="com/example">',
+      '    <class name="com/example/Foo" sourcefilename="Foo.java">',
+      '      <method name="bar"><counter type="BRANCH" missed="1" covered="2"/></method>',
+      '      <method name="baz"><counter type="BRANCH" missed="0" covered="3"/></method>',
+      '      <counter type="BRANCH" missed="1" covered="5"/>',
+      '    </class>',
+      '    <sourcefile name="Foo.java"><counter type="BRANCH" missed="1" covered="5"/></sourcefile>',
+      '  </package>',
+      '</report>',
+      '',
+    ].join('\n');
+    const path = join(dir, 'jacoco.xml');
+    writeFileSync(path, xml);
+    const r = overallBranchCoverage(path, 75);
+    // class-level aggregate: 5/(1+5) = 83%, NOT method bar 2/3=67%, NOT double-
+    // counted with <sourcefile> counter (would be 10/12=83% if doubled — same %
+    // here but the raw counts must be 5/6 not 10/12).
+    expect(r.hitBranches).toBe(5);
+    expect(r.totalBranches).toBe(6);
+    expect(r.branchPct).toBe(83);
+    expect(r.pass).toBe(true);
+  });
 });
 
 describe('parseLcovBranchCoverage malformed guard', () => {

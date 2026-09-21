@@ -140,4 +140,16 @@ describeOrSkip('coverage-attribution CLI (action handler)', () => {
     expect(r.status).not.toBe(0);
     expect(r.stderr.toLowerCase()).toContain('not found');
   });
+
+  it('per-Scenario <change-name> mode: empty test-plan reports no scenarios [cli-scenario-T4]', () => {
+    const lcov = ['SF:src/a.ts', 'BRDA:1,0,0,1', 'end_of_record', ''].join('\n');
+    setupProject(lcov);
+    const changeDir = join(dir, 'specpower', 'changes', 'empty-tp');
+    mkdirSync(changeDir, { recursive: true });
+    // test-plan.md exists but has zero Cases (header-only / empty).
+    writeFileSync(join(changeDir, 'test-plan.md'), '# test-plan: empty\n');
+    const r = runCli(dir, ['coverage-attribution', 'empty-tp', '--threshold', '75']);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('No Scenarios with Cases found in test-plan.md.');
+  });
 });
