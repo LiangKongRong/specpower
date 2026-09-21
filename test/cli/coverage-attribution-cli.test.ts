@@ -53,7 +53,7 @@ describeOrSkip('coverage-attribution CLI (action handler)', () => {
     expect(r.stdout).toContain('FAIL');
   });
 
-  it('--overall surfaces lowFiles even when aggregate passes [cli-overall-T3]', () => {
+  it('--overall surfaces lowFiles even when aggregate passes [cli-overall-T3] [enforce-coverage-floors-T15]', () => {
     // a.ts 100% (2/2), b.ts 0% (0/2) → aggregate 50%. Use threshold 40 so aggregate passes.
     const lcov = [
       'SF:src/a.ts', 'BRDA:1,0,0,1', 'BRDA:2,1,0,1', 'end_of_record',
@@ -75,14 +75,14 @@ describeOrSkip('coverage-attribution CLI (action handler)', () => {
     expect(r.stdout).toContain('... and 5 more'); // 25 - 20 = 5
   });
 
-  it('invalid threshold rejected [cli-overall-T5]', () => {
+  it('invalid threshold rejected [cli-overall-T5] [enforce-coverage-floors-T5]', () => {
     setupProject('SF:src/a.ts\nBRDA:1,0,0,1\nend_of_record\n');
     const r = runCli(dir, ['coverage-attribution', '--overall', '--threshold', 'abc']);
     expect(r.status).not.toBe(0);
     expect(r.stderr.toLowerCase()).toContain('invalid threshold');
   });
 
-  it('missing coverage report fails with guidance [cli-overall-T6]', () => {
+  it('missing coverage report fails with guidance [cli-overall-T6] [enforce-coverage-floors-T4]', () => {
     mkdirSync(join(dir, 'specpower'), { recursive: true });
     writeFileSync(join(dir, 'specpower', 'config.yaml'), 'schema: specpower\n');
     const r = runCli(dir, ['coverage-attribution', '--overall', '--threshold', '75']);
@@ -115,7 +115,7 @@ describeOrSkip('coverage-attribution CLI (action handler)', () => {
     expect(r.stdout).toContain('PASS — all');
   });
 
-  it('per-Scenario <change-name> mode: FAIL when a Scenario below threshold [cli-scenario-T2]', () => {
+  it('per-Scenario <change-name> mode: FAIL when a Scenario below threshold [cli-scenario-T2] [enforce-coverage-floors-T14]', () => {
     // a.ts: 1 hit / 2 total (one '1', one '0') = 50% < 75%.
     const lcov = ['SF:src/a.ts', 'BRDA:1,0,0,1', 'BRDA:2,1,0,0', 'end_of_record', ''].join('\n');
     setupProject(lcov);
@@ -141,7 +141,7 @@ describeOrSkip('coverage-attribution CLI (action handler)', () => {
     expect(r.stderr.toLowerCase()).toContain('not found');
   });
 
-  it('per-Scenario <change-name> mode: empty test-plan reports no scenarios [cli-scenario-T4]', () => {
+  it('per-Scenario <change-name> mode: empty test-plan reports no scenarios [cli-scenario-T4] [enforce-coverage-floors-T30]', () => {
     const lcov = ['SF:src/a.ts', 'BRDA:1,0,0,1', 'end_of_record', ''].join('\n');
     setupProject(lcov);
     const changeDir = join(dir, 'specpower', 'changes', 'empty-tp');
@@ -151,5 +151,27 @@ describeOrSkip('coverage-attribution CLI (action handler)', () => {
     const r = runCli(dir, ['coverage-attribution', 'empty-tp', '--threshold', '75']);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('No Scenarios with Cases found in test-plan.md.');
+  });
+
+  it('custom --threshold 60 used instead of default 75 [cli-scenario-T5] [enforce-coverage-floors-T19]', () => {
+    // a.ts: 1 hit / 2 total = 50%. Default 75 would FAIL; --threshold 60 also FAILs
+    // (50 < 60). Use a 66% file to distinguish: 2/3 = 66%. 66 >= 60 PASS, 66 < 75 FAIL.
+    const lcov = ['SF:src/a.ts', 'BRDA:1,0,0,1', 'BRDA:2,1,0,1', 'BRDA:3,2,0,-', 'end_of_record', ''].join('\n');
+    setupProject(lcov);
+    const changeDir = join(dir, 'specpower', 'changes', 'c19');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'test-plan.md'),
+      ['## Capability: cap', '',
+       '### Requirement: R → Scenario: s', '',
+       '- **Case** T1: custom threshold [negative]',
+       '  - Input: foo()', '  - Expected: reject', '  - it(): custom threshold',
+       '  - branch: custom-threshold', '  - covers: src/a.ts', ''].join('\n'));
+    // With --threshold 60: 66% >= 60 → PASS. With default 75: 66 < 75 → FAIL.
+    const r60 = runCli(dir, ['coverage-attribution', 'c19', '--threshold', '60']);
+    expect(r60.status).toBe(0);
+    expect(r60.stdout).toContain('[PASS]');
+    const r75 = runCli(dir, ['coverage-attribution', 'c19', '--threshold', '75']);
+    expect(r75.status).not.toBe(0);
+    expect(r75.stdout).toContain('[FAIL]');
   });
 });

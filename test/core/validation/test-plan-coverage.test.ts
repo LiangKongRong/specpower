@@ -8,14 +8,14 @@ const mk = (o: Partial<TestCase>): TestCase => ({
 });
 
 describe('checkCoverage', () => {
-  it('passes when every delta scenario has a case and negatives present [add-test-plan-artifact-T8]', () => {
+  it('passes when every delta scenario has a case and negatives present [add-test-plan-artifact-T8] [enforce-coverage-floors-T25]', () => {
     const r = checkCoverage({
       deltaScenarios: [{ requirement: 'r', scenario: 's' }],
       cases: [mk({ scenarioRef: 's', mark: 'negative', branch: 'validate-null' })],
     });
     expect(r.issues).toEqual([]);
   });
-  it('flags uncovered scenario [add-test-plan-artifact-T9]', () => {
+  it('flags uncovered scenario [add-test-plan-artifact-T9] [enforce-coverage-floors-T23]', () => {
     const r = checkCoverage({
       deltaScenarios: [{ requirement: 'r', scenario: 's' }],
       cases: [],
@@ -45,7 +45,7 @@ describe('checkCoverage', () => {
     });
     expect(r.issues.some((i) => i.issue === 'dangling-ref')).toBe(true);
   });
-  it('flags low-negative-ratio when failure-admitting req is below 30% [low-neg-ratio-T1]', () => {
+  it('flags low-negative-ratio when failure-admitting req is below 30% [low-neg-ratio-T1] [enforce-coverage-floors-T10]', () => {
     // 1 negative / 4 total = 25% < 30% → low-negative-ratio
     const r = checkCoverage({
       deltaScenarios: [
@@ -106,7 +106,7 @@ describe('checkCoverage', () => {
   });
 
   // --- distinct-branch anti-water-injection (tier 2) ---
-  it('deduplicates negative Cases sharing the same branch tag (blocks ratio padding) [branch-dedup-T1]', () => {
+  it('deduplicates negative Cases sharing the same branch tag (blocks ratio padding) [branch-dedup-T1] [enforce-coverage-floors-T11]', () => {
     // 3 negative Cases, but all share branch "validate-null" → only 1 distinct branch.
     // 1 distinct + 0 untagged = 1 neg / 4 total = 25% < 30% → low-negative-ratio fires.
     // (Without dedup, 3/4 = 75% would PASS — that's the water-injection we block.)
@@ -150,7 +150,7 @@ describe('checkCoverage', () => {
     expect(r.issues.some((i) => i.issue === 'duplicate-branch')).toBe(false);
   });
 
-  it('warns missing-branch-tag on untagged negative Cases [branch-dedup-T3]', () => {
+  it('warns missing-branch-tag on untagged negative Cases [branch-dedup-T3] [enforce-coverage-floors-T12]', () => {
     const r = checkCoverage({
       deltaScenarios: [{ requirement: 'r', scenario: 's-neg' }],
       cases: [mk({ id: 'T1', scenarioRef: 's-neg', mark: 'negative' })], // no branch:

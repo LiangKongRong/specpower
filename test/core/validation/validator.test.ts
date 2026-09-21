@@ -195,7 +195,7 @@ describe('validateSpec', () => {
     }
   });
 
-  it('does NOT treat legitimate-boundary scenarios as negative (empty/extreme/large input)', () => {
+  it('does NOT treat legitimate-boundary scenarios as negative (empty/extreme/large input) [enforce-coverage-floors-T24]', () => {
     // These scenario names use ambiguous terms (empty, extreme, large) that
     // appear in POSITIVE boundary tests. The validator must NOT count them as
     // negative, so a requirement with only these should trigger the

@@ -27,7 +27,7 @@ describe('attributeCoverage', () => {
     expect(r.pass).toBe(false);
   });
 
-  it('PASSes when all covers files are at/above threshold [cov-attr-T2]', () => {
+  it('PASSes when all covers files are at/above threshold [cov-attr-T2] [enforce-coverage-floors-T16]', () => {
     const cases = [
       mk({ id: 'T1', scenarioRef: 'scen-a', covers: 'src/a.ts, src/b.ts' }),
     ];
@@ -38,7 +38,7 @@ describe('attributeCoverage', () => {
     expect(r.pass).toBe(true);
   });
 
-  it('FAILs a scenario with no covers: (covers: required for testable) [cov-attr-T3]', () => {
+  it('FAILs a scenario with no covers: (covers: required for testable) [cov-attr-T3] [enforce-coverage-floors-T7]', () => {
     const cases = [mk({ id: 'T1', scenarioRef: 'scen-a' })]; // no covers
     const r = attributeCoverage({ cases, fileBranchPct: new Map(), threshold: 75 });
     expect(r.scenarios[0].branchPct).toBe(null);
@@ -46,7 +46,7 @@ describe('attributeCoverage', () => {
     expect(r.pass).toBe(false);
   });
 
-  it('treats a covers: file absent from the report as 0% [cov-attr-T4]', () => {
+  it('treats a covers: file absent from the report as 0% [cov-attr-T4] [enforce-coverage-floors-T17]', () => {
     const cases = [mk({ id: 'T1', scenarioRef: 'scen-a', covers: 'src/missing.ts' })];
     const r = attributeCoverage({ cases, fileBranchPct: new Map(), threshold: 75 });
     expect(r.scenarios[0].branchPct).toBe(0);
@@ -65,7 +65,7 @@ describe('attributeCoverage', () => {
     expect(r.scenarios[0].branchPct).toBe(40); // min(100, 40)
   });
 
-  it('one scenario below threshold fails the whole change (no majority leniency) [cov-attr-T6]', () => {
+  it('one scenario below threshold fails the whole change (no majority leniency) [cov-attr-T6] [enforce-coverage-floors-T6]', () => {
     const cases = [
       mk({ id: 'T1', scenarioRef: 'scen-good', covers: 'src/good.ts' }),
       mk({ id: 'T2', scenarioRef: 'scen-bad', covers: 'src/bad.ts' }),
@@ -78,7 +78,7 @@ describe('attributeCoverage', () => {
     expect(r.pass).toBe(false);
   });
 
-  it('normalizes backslash paths to forward slashes [cov-attr-T7]', () => {
+  it('normalizes backslash paths to forward slashes [cov-attr-T7] [enforce-coverage-floors-T18]', () => {
     expect(normalizePath('src\\cli\\init.ts')).toBe('src/cli/init.ts');
     // A covers: path with backslashes should match an SF with forward slashes
     const cases = [mk({ id: 'T1', scenarioRef: 'scen-a', covers: 'src\\a.ts' })];
@@ -112,7 +112,7 @@ describe('overallBranchCoverage', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('computes aggregate branch coverage across all files (not average of %) [overall-T1]', () => {
+  it('computes aggregate branch coverage across all files (not average of %) [overall-T1] [enforce-coverage-floors-T1] [enforce-coverage-floors-T20]', () => {
     const path = join(dir, 'lcov.info');
     writeFileSync(path, LCOV);
     // a.ts: 2/2=100%, b.ts: 1/2=50%. Average of % = 75%. Aggregate = 3/4 = 75%.
@@ -124,7 +124,7 @@ describe('overallBranchCoverage', () => {
     expect(r.pass).toBe(true);
   });
 
-  it('FAILs when aggregate is below threshold [overall-T2]', () => {
+  it('FAILs when aggregate is below threshold [overall-T2] [enforce-coverage-floors-T2]', () => {
     const path = join(dir, 'lcov.info');
     writeFileSync(path, LCOV);
     const r = overallBranchCoverage(path, 80); // 75% < 80%
@@ -132,7 +132,7 @@ describe('overallBranchCoverage', () => {
     expect(r.pass).toBe(false);
   });
 
-  it('surfaces low-coverage files even when aggregate passes (masking detection) [overall-T3]', () => {
+  it('surfaces low-coverage files even when aggregate passes (masking detection) [overall-T3] [enforce-coverage-floors-T3]', () => {
     // a.ts 100% (2/2), b.ts 0% (0/2). Aggregate = 2/4 = 50% → FAIL.
     // But if threshold were 40%, aggregate 50% PASS yet b.ts 0% is masked.
     const lcov = [
@@ -153,7 +153,7 @@ describe('overallBranchCoverage', () => {
     expect(r.lowFiles.some((f) => f.file === 'src/b.ts' && f.pct === 0)).toBe(true);
   });
 
-  it('treats BRDA 4th field "0" as uncovered (v8 lcov format) [overall-T4]', () => {
+  it('treats BRDA 4th field "0" as uncovered (v8 lcov format) [overall-T4] [enforce-coverage-floors-T8]', () => {
     // v8 lcov uses '0' (not '-') for reachable-but-unexecuted branches.
     // a.ts: 1 hit / 2 total (one '1', one '0') = 50%.
     const lcov = [
@@ -172,7 +172,7 @@ describe('overallBranchCoverage', () => {
     expect(r.pass).toBe(false); // 50% < 75%
   });
 
-  it('throws on truncated/malformed lcov (no false PASS from partial data) [overall-T5]', () => {
+  it('throws on truncated/malformed lcov (no false PASS from partial data) [overall-T5] [enforce-coverage-floors-T29]', () => {
     // Truncated: SF: without matching end_of_record → must throw, not fabricate %.
     const lcov = [
       'SF:src/a.ts',
@@ -229,7 +229,7 @@ describe('overallBranchCoverage', () => {
     expect(r.branchPct).toBe(75);
   });
 
-  it('lowFiles list truncated when >20 files below threshold [overall-T8]', () => {
+  it('lowFiles list truncated when >20 files below threshold [overall-T8] [enforce-coverage-floors-T32]', () => {
     // 25 files each at 0% (1 SF, 1 uncovered BRDA each), threshold 75 → all low.
     const lines: string[] = [];
     for (let i = 0; i < 25; i++) {
@@ -304,7 +304,7 @@ describe('parseJacocoBranchCoverage sourcefilename key', () => {
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'jacoco-')); });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
-  it('keys per sourcefile basename (standard jacoco) [jacoco-T1]', () => {
+  it('keys per sourcefile basename (standard jacoco) [jacoco-T1] [enforce-coverage-floors-T21]', () => {
     const xml = [
       '<?xml version="1.0"?>',
       '<report>',
@@ -407,7 +407,7 @@ describe('attributeChangeCoverage jacoco end-to-end (T33)', () => {
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'attr-jacoco-e2e-')); });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
-  it('jacoco + full-path covers: false-FAILs (basename mismatch) [attr-jacoco-T1]', async () => {
+  it('jacoco + full-path covers: false-FAILs (basename mismatch) [attr-jacoco-T1] [enforce-coverage-floors-T33]', async () => {
     const { attributeChangeCoverage } = await import('../../src/core/coverage-attribution.js');
     // jacoco report: Foo.java class-level 5/6 = 83%.
     const xml = [
