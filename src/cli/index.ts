@@ -9,6 +9,7 @@ import { registerChangePhaseCommand } from './commands/change-phase.js';
 import { registerChangeModeCommand } from './commands/change-mode.js';
 import { registerInstructionsCommand } from './commands/instructions.js';
 import { registerValidateCommand } from './commands/validate.js';
+import { registerCoverageAttributionCommand } from './commands/coverage-attribution.js';
 import { registerInitCommand } from './commands/init.js';
 import { registerSyncCommand } from './commands/sync.js';
 import { registerConfigCommand } from './commands/config.js';
@@ -39,6 +40,7 @@ registerChangeModeCommand(changeCmd);
 // Top-level commands
 registerInstructionsCommand(program);
 registerValidateCommand(program);
+registerCoverageAttributionCommand(program);
 registerInitCommand(program);
 registerSyncCommand(program);
 registerConfigCommand(program);
