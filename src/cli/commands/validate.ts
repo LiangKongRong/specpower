@@ -87,6 +87,20 @@ function findChangeRoot(specPath: string): string | null {
 }
 
 /**
+ * Infer the capability name from a spec file path of the form
+ * `.../specs/<capability>/spec.md`. Returns null if the path does not match
+ * this shape (so the caller falls back to using all Cases).
+ */
+function inferCapability(specPath: string): string | null {
+  const dir = dirname(specPath);
+  const parent = dirname(dir);
+  if (basename(parent) === 'specs' && basename(specPath) === 'spec.md') {
+    return basename(dir);
+  }
+  return null;
+}
+
+/**
  * Extract delta scenarios (requirement + scenario name pairs) from a spec
  * markdown string by scanning `### Requirement:` and `#### Scenario:` headers.
  * Requirement `[testable]` and scenario `[negative]` trailing markers are
@@ -157,11 +171,21 @@ async function checkTestPlan(
   }
 
   const cases = await parseTestPlanFile(testPlanPath);
+  // Filter to Cases whose capability matches the spec being validated. A
+  // change's test-plan may span multiple capabilities (one `## Capability:`
+  // per group); validate <file> checks one spec file, so only that spec's
+  // capability's Cases are relevant — cross-capability Cases would otherwise
+  // all dangle (their Scenarios live in other spec files). The capability is
+  // inferred from the spec path `.../specs/<capability>/spec.md`.
+  const specCapability = inferCapability(specPath);
+  const relevantCases = specCapability
+    ? cases.filter((c) => c.capability === specCapability)
+    : cases;
   const baselineScenarios = await loadBaselineScenarios(changeRoot);
   const failureAdmittingRequirements = collectFailureAdmittingRequirements(deltaScenarios);
   const result = checkCoverage({
     deltaScenarios,
-    cases,
+    cases: relevantCases,
     baselineScenarios,
     failureAdmittingRequirements,
   });
