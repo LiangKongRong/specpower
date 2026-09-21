@@ -133,15 +133,24 @@ export function attributeCoverage(input: AttributionInput): AttributionResult {
  */
 export function parseLcovBranchCoverage(lcovPath: string): Map<string, number> {
   const content = readFileSync(lcovPath, 'utf-8');
-  return parseLcovContent(content);
+  // Convert raw {hit, total} to pct for the per-file map API (back-compat).
+  const raw = parseLcovContent(content);
+  const out = new Map<string, number>();
+  for (const [file, { hit, total }] of raw) {
+    if (total > 0) out.set(file, Math.round((hit / total) * 100));
+  }
+  return out;
 }
 
 /**
- * Parse lcov content (shared by file-path and content-based callers). Throws
- * on malformed/truncated lcov (SF count != end_of_record count). Pure (no I/O).
+ * Parse lcov content into raw per-file {hit, total} branch counts (shared by
+ * file-path and content-based callers). Throws on malformed/truncated lcov
+ * (SF count != end_of_record count). Pure (no I/O). Returns raw counts so
+ * callers needing aggregate (overallBranchCoverage) do not need a second
+ * parse pass (avoids double-parse drift); callers needing pct derive it.
  */
-function parseLcovContent(content: string): Map<string, number> {
-  const out = new Map<string, number>();
+function parseLcovContent(content: string): Map<string, { hit: number; total: number }> {
+  const out = new Map<string, { hit: number; total: number }>();
   let curFile: string | null = null;
   let total = 0;
   let hit = 0;
@@ -149,7 +158,7 @@ function parseLcovContent(content: string): Map<string, number> {
   let eorCount = 0;
   const flush = (): void => {
     if (curFile !== null && total > 0) {
-      out.set(curFile, Math.round((hit / total) * 100));
+      out.set(curFile, { hit, total });
     }
     curFile = null;
     total = 0;
@@ -335,38 +344,16 @@ export function overallBranchCoverage(reportPath: string, threshold = 75): Overa
       perFile.push({ file, hit: covered, total: t, pct: Math.round((covered / t) * 100) });
     }
   } else {
-    // lcov.info: call parseLcovContent first to enforce the SF/end_of_record
-    // integrity check (throws on truncated/malformed — no false PASS from
-    // partial data), then inline the raw-count aggregation (parseLcovContent
-    // only returns pct; aggregate needs raw hit/total).
-    parseLcovContent(content);
-    let curFile: string | null = null;
-    let fileTotal = 0;
-    let fileHit = 0;
-    const flush = (): void => {
-      if (curFile !== null && fileTotal > 0) {
-        total += fileTotal;
-        hit += fileHit;
-        perFile.push({ file: curFile, hit: fileHit, total: fileTotal, pct: Math.round((fileHit / fileTotal) * 100) });
-      }
-      curFile = null;
-      fileTotal = 0;
-      fileHit = 0;
-    };
-    for (const line of content.split(/\r?\n/)) {
-      if (line.startsWith('SF:')) {
-        flush();
-        curFile = normalizePath(line.slice(3));
-      } else if (line.startsWith('BRDA:')) {
-        const parts = line.slice(5).split(',');
-        fileTotal++;
-        const hitCount = parts[3];
-        if (hitCount && hitCount !== '-' && hitCount !== '0') fileHit++;
-      } else if (line === 'end_of_record') {
-        flush();
-      }
+    // lcov.info: parseLcovContent enforces the SF/end_of_record integrity check
+    // (throws on truncated/malformed — no false PASS from partial data) AND
+    // returns raw per-file {hit, total}; aggregate directly from it (no second
+    // parse pass — avoids double-parse drift).
+    const perFileMap = parseLcovContent(content);
+    for (const [file, { hit: fileHit, total: fileTotal }] of perFileMap) {
+      total += fileTotal;
+      hit += fileHit;
+      perFile.push({ file, hit: fileHit, total: fileTotal, pct: Math.round((fileHit / fileTotal) * 100) });
     }
-    flush();
   }
 
   const branchPct = total > 0 ? Math.round((hit / total) * 100) : 0;

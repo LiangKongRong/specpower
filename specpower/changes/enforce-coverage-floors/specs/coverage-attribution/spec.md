@@ -93,7 +93,12 @@ The CLI SHALL support two coverage report formats: lcov.info (JS/TS v8/istanbul)
 #### Scenario: jacoco report parsed for branch coverage
 
 - **WHEN** the report is `target/site/jacoco/jacoco.xml`
-- **THEN** the CLI sums `<counter type="BRANCH" missed covered>` per `<class filename>` and computes covered/(covered+missed) per source file
+- **THEN** the CLI sums `<counter type="BRANCH" missed covered>` per `<class sourcefilename>` and computes covered/(covered+missed) per source file
+
+#### Scenario: jacoco per-Scenario covers: must use basename [negative]
+
+- **WHEN** a project uses jacoco and a `[negative]` Case's `covers:` is a full package path (e.g. `com/huawei/.../Service.java`) rather than the sourcefilename basename (`Service.java`)
+- **THEN** the full path does not match jacoco's sourcefilename-basename key, the file contributes 0%, and the Scenario's attributed minimum drops accordingly (false FAIL) — so for jacoco projects `covers:` SHALL use the sourcefilename basename to match; the `--overall` aggregate is unaffected (key-independent)
 
 #### Scenario: lcov zero-hit branch counted as uncovered [negative]
 

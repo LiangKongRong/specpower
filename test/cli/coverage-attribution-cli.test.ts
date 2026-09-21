@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -11,12 +11,19 @@ import { spawnSync } from 'node:child_process';
 
 const CLI = join(process.cwd(), 'dist', 'cli', 'index.js');
 
+// The CLI test spawns the built dist/cli/index.js. If dist is absent (e.g. a
+// local `npx vitest run` without a prior `npm run build`), the tests would
+// fail confusingly against a missing file. Guard: skip the whole suite if dist
+// is missing, with a clear message. CI runs `npm run build` before tests, so CI
+// always has dist and runs the suite.
+const describeOrSkip = existsSync(CLI) ? describe : describe.skip;
+
 function runCli(cwd: string, args: string[]): { stdout: string; stderr: string; status: number } {
   const r = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: 'utf-8' });
   return { stdout: r.stdout ?? '', stderr: r.stderr ?? '', status: r.status ?? 0 };
 }
 
-describe('coverage-attribution CLI (action handler)', () => {
+describeOrSkip('coverage-attribution CLI (action handler)', () => {
   let dir: string;
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'cli-cov-')); });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });

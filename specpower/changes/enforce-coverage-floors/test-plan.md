@@ -134,8 +134,17 @@
 
 - **Case** T21: jacoco report parsed [positive]
   - Input: report is `target/site/jacoco/jacoco.xml`
-  - Expected: CLI sums `<counter type="BRANCH">` per `<class filename>`, computes covered/(covered+missed)
+  - Expected: CLI sums `<counter type="BRANCH">` per `<class sourcefilename>`, computes covered/(covered+missed)
   - it(): jacoco report parsed [enforce-coverage-floors-T21]
+  - covers: src/core/coverage-attribution.ts
+
+### Requirement: coverage report format support → Scenario: jacoco per-Scenario covers: must use basename
+
+- **Case** T33: jacoco full-path covers: false FAIL [negative]
+  - Input: jacoco project, a [negative] Case `covers: com/pkg/Service.java` (full path) instead of basename `Service.java`
+  - Expected: full path does not match jacoco sourcefilename-basename key → 0% → Scenario's minimum drops (false FAIL); `--overall` unaffected
+  - it(): jacoco full-path covers false fail [enforce-coverage-floors-T33]
+  - branch: jacoco-fullpath-covers
   - covers: src/core/coverage-attribution.ts
 
 ### Requirement: coverage report format support → Scenario: stale or malformed coverage report fails
