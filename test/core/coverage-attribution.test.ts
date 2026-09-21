@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { attributeCoverage, normalizePath, overallBranchCoverage } from '../../src/core/coverage-attribution.js';
+import { attributeCoverage, normalizePath, overallBranchCoverage, parseLcovBranchCoverage, parseJacocoBranchCoverage } from '../../src/core/coverage-attribution.js';
 import { writeFileSync, rmSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -170,5 +170,112 @@ describe('overallBranchCoverage', () => {
     expect(r.totalBranches).toBe(2);
     expect(r.branchPct).toBe(50);
     expect(r.pass).toBe(false); // 50% < 75%
+  });
+
+  it('throws on truncated/malformed lcov (no false PASS from partial data) [overall-T5]', () => {
+    // Truncated: SF: without matching end_of_record → must throw, not fabricate %.
+    const lcov = [
+      'SF:src/a.ts',
+      'BRDA:1,0,0,1',
+      'BRDA:2,1,0,1',
+      // missing end_of_record — truncated
+      '',
+    ].join('\n');
+    const path = join(dir, 'lcov.info');
+    writeFileSync(path, lcov);
+    expect(() => overallBranchCoverage(path, 75)).toThrow(/Malformed lcov/);
+  });
+
+  it('parses jacoco XML aggregate branch coverage by sourcefilename [overall-T6]', () => {
+    // Standard jacoco <class name="pkg/Foo" sourcefilename="Foo.java"> with
+    // <counter type="BRANCH" missed="1" covered="2"/> → 2/(1+2) = 67%.
+    // Attributes order-independent; key is sourcefilename basename.
+    const xml = [
+      '<?xml version="1.0"?>',
+      '<report>',
+      '  <package name="pkg">',
+      '    <class name="pkg/Foo" sourcefilename="Foo.java">',
+      '      <counter type="BRANCH" missed="1" covered="2"/>',
+      '    </class>',
+      '  </package>',
+      '</report>',
+      '',
+    ].join('\n');
+    const path = join(dir, 'jacoco.xml');
+    writeFileSync(path, xml);
+    const r = overallBranchCoverage(path, 60);
+    expect(r.hitBranches).toBe(2);
+    expect(r.totalBranches).toBe(3);
+    expect(r.branchPct).toBe(67);
+    expect(r.pass).toBe(true); // 67% >= 60%
+  });
+
+  it('jacoco counter attributes parsed order-independently [overall-T7]', () => {
+    // covered before missed (XSL-reordered) — must still parse correctly.
+    const xml = [
+      '<?xml version="1.0"?>',
+      '<report>',
+      '  <class name="pkg/Bar" sourcefilename="Bar.java">',
+      '    <counter covered="3" missed="1" type="BRANCH"/>',
+      '  </class>',
+      '</report>',
+      '',
+    ].join('\n');
+    const path = join(dir, 'jacoco.xml');
+    writeFileSync(path, xml);
+    const r = overallBranchCoverage(path, 75);
+    expect(r.hitBranches).toBe(3);
+    expect(r.totalBranches).toBe(4);
+    expect(r.branchPct).toBe(75);
+  });
+
+  it('lowFiles list truncated when >20 files below threshold [overall-T8]', () => {
+    // 25 files each at 0% (1 SF, 1 uncovered BRDA each), threshold 75 → all low.
+    const lines: string[] = [];
+    for (let i = 0; i < 25; i++) {
+      lines.push(`SF:src/file${i}.ts`, 'BRDA:1,0,0,-', 'end_of_record');
+    }
+    const path = join(dir, 'lcov.info');
+    writeFileSync(path, lines.join('\n'));
+    const r = overallBranchCoverage(path, 75);
+    expect(r.lowFiles.length).toBe(25);
+    // The CLI truncates display to 20; overallBranchCoverage returns all 25
+    // (truncation is a CLI presentation concern, tested at the CLI layer).
+    expect(r.pass).toBe(false); // 0% aggregate
+  });
+});
+
+describe('parseLcovBranchCoverage malformed guard', () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'lcov-malformed-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('throws on truncated lcov (SF without end_of_record) [lcov-malformed-T1]', () => {
+    const path = join(dir, 'lcov.info');
+    writeFileSync(path, ['SF:src/a.ts', 'BRDA:1,0,0,1', ''].join('\n'));
+    expect(() => parseLcovBranchCoverage(path)).toThrow(/Malformed lcov/);
+  });
+});
+
+describe('parseJacocoBranchCoverage sourcefilename key', () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'jacoco-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('keys per sourcefile basename (standard jacoco) [jacoco-T1]', () => {
+    const xml = [
+      '<?xml version="1.0"?>',
+      '<report>',
+      '  <class name="pkg/Foo" sourcefilename="Foo.java">',
+      '    <counter type="BRANCH" missed="1" covered="3"/>',
+      '  </class>',
+      '</report>',
+      '',
+    ].join('\n');
+    const path = join(dir, 'jacoco.xml');
+    writeFileSync(path, xml);
+    const m = parseJacocoBranchCoverage(path);
+    expect(m.get('Foo.java')).toBe(75); // 3/(1+3)
+    expect(m.has('pkg/Foo.java')).toBe(false); // not keyed by package path
   });
 });

@@ -1,0 +1,93 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+
+// CLI integration tests for `specpower coverage-attribution`. These exercise
+// the CLI action handler (src/cli/commands/coverage-attribution.ts) which the
+// pure-function tests do not cover — including --overall display, lowFiles
+// truncation, invalid threshold, missing report, and missing change.
+
+const CLI = join(process.cwd(), 'dist', 'cli', 'index.js');
+
+function runCli(cwd: string, args: string[]): { stdout: string; stderr: string; status: number } {
+  const r = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: 'utf-8' });
+  return { stdout: r.stdout ?? '', stderr: r.stderr ?? '', status: r.status ?? 0 };
+}
+
+describe('coverage-attribution CLI (action handler)', () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'cli-cov-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  function setupProject(lcov: string): void {
+    // specpower project root marker
+    mkdirSync(join(dir, 'specpower'), { recursive: true });
+    writeFileSync(join(dir, 'specpower', 'config.yaml'), 'schema: specpower\n');
+    mkdirSync(join(dir, 'coverage'), { recursive: true });
+    writeFileSync(join(dir, 'coverage', 'lcov.info'), lcov);
+  }
+
+  it('--overall PASS prints aggregate + no lowFiles when all >= threshold [cli-overall-T1]', () => {
+    const lcov = ['SF:src/a.ts', 'BRDA:1,0,0,1', 'BRDA:2,1,0,1', 'end_of_record', ''].join('\n');
+    setupProject(lcov);
+    const r = runCli(dir, ['coverage-attribution', '--overall', '--threshold', '75']);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('PASS');
+    expect(r.stdout).toContain('100%');
+  });
+
+  it('--overall FAIL prints FAIL when aggregate below threshold [cli-overall-T2]', () => {
+    const lcov = ['SF:src/a.ts', 'BRDA:1,0,0,-', 'BRDA:2,1,0,-', 'end_of_record', ''].join('\n');
+    setupProject(lcov);
+    const r = runCli(dir, ['coverage-attribution', '--overall', '--threshold', '75']);
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain('FAIL');
+  });
+
+  it('--overall surfaces lowFiles even when aggregate passes [cli-overall-T3]', () => {
+    // a.ts 100% (2/2), b.ts 0% (0/2) → aggregate 50%. Use threshold 40 so aggregate passes.
+    const lcov = [
+      'SF:src/a.ts', 'BRDA:1,0,0,1', 'BRDA:2,1,0,1', 'end_of_record',
+      'SF:src/b.ts', 'BRDA:1,0,0,-', 'BRDA:2,1,0,-', 'end_of_record', '',
+    ].join('\n');
+    setupProject(lcov);
+    const r = runCli(dir, ['coverage-attribution', '--overall', '--threshold', '40']);
+    expect(r.status).toBe(0); // aggregate 50% >= 40% PASS
+    expect(r.stdout).toContain('src/b.ts'); // lowFiles surfaces the masked 0% file
+  });
+
+  it('--overall truncates lowFiles to 20 with "... and N more" [cli-overall-T4]', () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 25; i++) {
+      lines.push(`SF:src/file${i}.ts`, 'BRDA:1,0,0,-', 'end_of_record');
+    }
+    setupProject(lines.join('\n'));
+    const r = runCli(dir, ['coverage-attribution', '--overall', '--threshold', '75']);
+    expect(r.stdout).toContain('... and 5 more'); // 25 - 20 = 5
+  });
+
+  it('invalid threshold rejected [cli-overall-T5]', () => {
+    setupProject('SF:src/a.ts\nBRDA:1,0,0,1\nend_of_record\n');
+    const r = runCli(dir, ['coverage-attribution', '--overall', '--threshold', 'abc']);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr.toLowerCase()).toContain('invalid threshold');
+  });
+
+  it('missing coverage report fails with guidance [cli-overall-T6]', () => {
+    mkdirSync(join(dir, 'specpower'), { recursive: true });
+    writeFileSync(join(dir, 'specpower', 'config.yaml'), 'schema: specpower\n');
+    const r = runCli(dir, ['coverage-attribution', '--overall', '--threshold', '75']);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr.toLowerCase()).toContain('no coverage report found');
+  });
+
+  it('stale/malformed lcov fails (no false PASS from partial data) [cli-overall-T7]', () => {
+    // Truncated: SF without end_of_record.
+    setupProject('SF:src/a.ts\nBRDA:1,0,0,1\n'); // no end_of_record
+    const r = runCli(dir, ['coverage-attribution', '--overall', '--threshold', '75']);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr.toLowerCase() + r.stdout.toLowerCase()).toMatch(/malformed|truncat/i);
+  });
+});

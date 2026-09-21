@@ -118,18 +118,35 @@ export function attributeCoverage(input: AttributionInput): AttributionResult {
  * Parse a v8/istanbul lcov.info file into a Map of normalized file path -> branch
  * coverage %. v8/istanbul lcov lists branches as `BRDA:<line>,<block>,<branch>,<hit>`
  * under each `SF:<file>` record (hit `-` = uncovered). There is no BRH/BRF
- * summary, so we count: hit = 4th field !== '-', total = all BRDA lines for SF.
+ * summary, so we count: hit = 4th field !== '-' and !== '0', total = all BRDA lines for SF.
  *
  * Files with zero BRDA lines (no branches) are omitted (no branch coverage to
  * attribute — they contribute nothing and would skew the min toward 100% or
  * cause divide-by-zero).
+ *
+ * Integrity check: a well-formed lcov has one `end_of_record` per `SF:`. A
+ * truncated/malformed report (e.g. half-written from an aborted coverage run)
+ * may have `SF:` without matching `end_of_record`, yielding partial data that
+ * could fabricate a (false) PASS. This function throws on such malformation
+ * rather than silently reporting partial figures — so the spec scenario
+ * "stale or malformed coverage report fails" holds (no false PASS from partial data).
  */
 export function parseLcovBranchCoverage(lcovPath: string): Map<string, number> {
   const content = readFileSync(lcovPath, 'utf-8');
+  return parseLcovContent(content);
+}
+
+/**
+ * Parse lcov content (shared by file-path and content-based callers). Throws
+ * on malformed/truncated lcov (SF count != end_of_record count). Pure (no I/O).
+ */
+function parseLcovContent(content: string): Map<string, number> {
   const out = new Map<string, number>();
   let curFile: string | null = null;
   let total = 0;
   let hit = 0;
+  let sfCount = 0;
+  let eorCount = 0;
   const flush = (): void => {
     if (curFile !== null && total > 0) {
       out.set(curFile, Math.round((hit / total) * 100));
@@ -142,18 +159,29 @@ export function parseLcovBranchCoverage(lcovPath: string): Map<string, number> {
     if (line.startsWith('SF:')) {
       flush();
       curFile = normalizePath(line.slice(3));
+      sfCount++;
     } else if (line.startsWith('BRDA:')) {
       const parts = line.slice(5).split(',');
       total++;
       // lcov BRDA 4th field: hit count. '-' = unreachable, '0' = reachable
       // but never executed — both mean uncovered. (v8 lcov uses '0'.)
+      // An empty/truncated 4th field is malformed — guard against counting it as hit.
       const hitCount = parts[3];
-      if (hitCount !== '-' && hitCount !== '0') hit++;
+      if (hitCount && hitCount !== '-' && hitCount !== '0') hit++;
     } else if (line === 'end_of_record') {
       flush();
+      eorCount++;
     }
   }
   flush();
+  // Integrity: each SF must have a matching end_of_record. A mismatch means
+  // the report is truncated/malformed (partial data) — fail loudly, do not
+  // fabricate coverage figures from partial data.
+  if (sfCount !== eorCount) {
+    throw new Error(
+      `Malformed lcov: ${sfCount} SF: record(s) but ${eorCount} end_of_record line(s) — report is truncated or malformed (refuse to compute coverage from partial data)`,
+    );
+  }
   return out;
 }
 
@@ -165,20 +193,40 @@ export function parseLcovBranchCoverage(lcovPath: string): Map<string, number> {
  * DeviceManagementService.java). This is an approximation — jacoco keys by
  * class, not file; for `covers:` matching use the class's source file path.
  */
+/**
+ * Parse a jacoco XML report into a Map of source-file basename -> branch %.
+ * Standard jacoco emits <class name="com/pkg/Class" sourcefilename="Class.java">;
+ * we key per source file by the sourcefilename basename (jacoco does not carry
+ * the package path on <class>). For per-Scenario attribution, `covers:` paths
+ * must be basenames to match. For --overall the aggregate is key-independent.
+ */
 export function parseJacocoBranchCoverage(xmlPath: string): Map<string, number> {
   const content = readFileSync(xmlPath, 'utf-8');
+  return parseJacocoContent(content);
+}
+
+/**
+ * Parse jacoco content (shared, pure). Returns Map<sourcefile basename, branch%>.
+ */
+function parseJacocoContent(content: string): Map<string, number> {
   const out = new Map<string, number>();
-  // Aggregate <counter type="BRANCH" missed="X" covered="Y"> per <class filename="...">.
-  const classRe = /<class\s+[^>]*filename="([^"]+)"[^>]*>([\s\S]*?)<\/class>/g;
-  let m: RegExpExecArray | null;
   const perFile: Map<string, { covered: number; missed: number }> = new Map();
-  while ((m = classRe.exec(content)) !== null) {
-    const file = normalizePath(m[1]);
+  const tagRe = /<class\s+([^>]*)>([\s\S]*?)<\/class>/g;
+  let m: RegExpExecArray | null;
+  while ((m = tagRe.exec(content)) !== null) {
+    const classAttrs = m[1];
     const body = m[2];
-    const branchCounter = /<counter\s+type="BRANCH"\s+missed="(\d+)"\s+covered="(\d+)"/.exec(body);
-    if (!branchCounter) continue;
-    const missed = parseInt(branchCounter[1], 10);
-    const covered = parseInt(branchCounter[2], 10);
+    const sfMatch = /sourcefilename="([^"]+)"/.exec(classAttrs);
+    const nameMatch = /\bname="([^"]+)"/.exec(classAttrs);
+    const file = normalizePath(sfMatch ? sfMatch[1] : (nameMatch ? nameMatch[1].split('/').pop()! : 'unknown'));
+    const counterMatch = /<counter\s+[^>]*type="BRANCH"[^>]*\/>/.exec(body);
+    if (!counterMatch) continue;
+    const counterTag = counterMatch[0];
+    const missedMatch = /missed="(\d+)"/.exec(counterTag);
+    const coveredMatch = /covered="(\d+)"/.exec(counterTag);
+    if (!missedMatch || !coveredMatch) continue;
+    const missed = parseInt(missedMatch[1], 10);
+    const covered = parseInt(coveredMatch[1], 10);
     const cur = perFile.get(file) ?? { covered: 0, missed: 0 };
     cur.covered += covered;
     cur.missed += missed;
@@ -243,16 +291,37 @@ export function overallBranchCoverage(reportPath: string, threshold = 75): Overa
   const perFile: { file: string; hit: number; total: number; pct: number }[] = [];
 
   if (reportPath.endsWith('.xml') || reportPath.endsWith('jacoco.xml')) {
-    // jacoco: sum <counter type="BRANCH" missed/covered> per <class filename>.
-    const classRe = /<class\s+[^>]*filename="([^"]+)"[^>]*>([\s\S]*?)<\/class>/g;
-    let m: RegExpExecArray | null;
+    // jacoco: sum <counter type="BRANCH" missed/covered> per <class>. Standard
+    // jacoco emits <class name="com/pkg/Class" sourcefilename="Class.java"> —
+    // NOT filename="full/path". The per-source-file key is the sourcefilename
+    // basename (jacoco does not carry the package path on <class>; the package
+    // is on <package name="com/pkg">, the sourcefile on <sourcefile name="Class.java">).
+    // We key per-source-file by sourcefilename basename. For --overall the
+    // aggregate is correct (key-independent). For per-Scenario attribution,
+    // `covers:` paths must therefore be basenames (e.g. `DeviceManagementService.java`)
+    // to match jacoco's sourcefilename — documented as a known limitation.
+    // Parse attributes order-independently (counter attributes may be reordered
+    // by XSL transforms); extract each attribute by name, not by position.
     const perFileAgg: Map<string, { covered: number; missed: number }> = new Map();
-    while ((m = classRe.exec(content)) !== null) {
-      const file = normalizePath(m[1]);
-      const bc = /<counter\s+type="BRANCH"\s+missed="(\d+)"\s+covered="(\d+)"/.exec(m[2]);
-      if (!bc) continue;
-      const missed = parseInt(bc[1], 10);
-      const covered = parseInt(bc[2], 10);
+    const tagRe = /<class\s+([^>]*)>([\s\S]*?)<\/class>/g;
+    let cm: RegExpExecArray | null;
+    while ((cm = tagRe.exec(content)) !== null) {
+      const classAttrs = cm[1];
+      const body = cm[2];
+      // sourcefilename="Class.java" (basename). Fall back to name="com/pkg/Class"
+      // basename if sourcefilename absent (non-standard but defensive).
+      const sfMatch = /sourcefilename="([^"]+)"/.exec(classAttrs);
+      const nameMatch = /\bname="([^"]+)"/.exec(classAttrs);
+      const file = normalizePath(sfMatch ? sfMatch[1] : (nameMatch ? nameMatch[1].split('/').pop()! : 'unknown'));
+      // Counter: order-independent attribute parsing.
+      const counterMatch = /<counter\s+[^>]*type="BRANCH"[^>]*\/>/.exec(body);
+      if (!counterMatch) continue;
+      const counterTag = counterMatch[0];
+      const missedMatch = /missed="(\d+)"/.exec(counterTag);
+      const coveredMatch = /covered="(\d+)"/.exec(counterTag);
+      if (!missedMatch || !coveredMatch) continue;
+      const missed = parseInt(missedMatch[1], 10);
+      const covered = parseInt(coveredMatch[1], 10);
       const cur = perFileAgg.get(file) ?? { covered: 0, missed: 0 };
       cur.covered += covered;
       cur.missed += missed;
@@ -266,7 +335,11 @@ export function overallBranchCoverage(reportPath: string, threshold = 75): Overa
       perFile.push({ file, hit: covered, total: t, pct: Math.round((covered / t) * 100) });
     }
   } else {
-    // lcov.info: count BRDA per SF.
+    // lcov.info: call parseLcovContent first to enforce the SF/end_of_record
+    // integrity check (throws on truncated/malformed — no false PASS from
+    // partial data), then inline the raw-count aggregation (parseLcovContent
+    // only returns pct; aggregate needs raw hit/total).
+    parseLcovContent(content);
     let curFile: string | null = null;
     let fileTotal = 0;
     let fileHit = 0;
@@ -287,10 +360,8 @@ export function overallBranchCoverage(reportPath: string, threshold = 75): Overa
       } else if (line.startsWith('BRDA:')) {
         const parts = line.slice(5).split(',');
         fileTotal++;
-        // lcov BRDA 4th field: hit count. '-' = unreachable, '0' = reachable
-        // but never executed — both mean uncovered. (v8 lcov uses '0'.)
         const hitCount = parts[3];
-        if (hitCount !== '-' && hitCount !== '0') fileHit++;
+        if (hitCount && hitCount !== '-' && hitCount !== '0') fileHit++;
       } else if (line === 'end_of_record') {
         flush();
       }

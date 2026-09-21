@@ -57,4 +57,35 @@ describe('validate capability filtering (multi-capability test-plan)', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it('falls back to all Cases + warns on capability-name mismatch [cap-filter-T3]', async () => {
+    // Spec dir is `cap-a`, but test-plan says `## Capability: Cap A` (name mismatch).
+    // Without the foot-gun guard, all Cases filter out → every delta Scenario
+    // reported as uncovered (misleading). With the guard: fall back to all
+    // Cases + emit a capability-mismatch warning.
+    const root = mkdtempSync(join(tmpdir(), 'cap-mismatch-'));
+    const changeDir = join(root, 'specpower', 'changes', 'mismatch');
+    const specsDir = join(changeDir, 'specs');
+    mkdirSync(join(specsDir, 'cap-a'), { recursive: true });
+    writeFileSync(join(specsDir, 'cap-a', 'spec.md'),
+      ['## ADDED Requirements', '', '### Requirement: Req A [testable]', 'desc', '',
+       '#### Scenario: scen-a [negative]', '- **WHEN** bad', '- **THEN** reject', ''].join('\n'));
+    writeFileSync(join(changeDir, '.specpower.yaml'), 'schema: specpower\nphase: built\n');
+    writeFileSync(join(changeDir, 'test-plan.md'),
+      ['## Capability: Cap A', '',  // mismatch: dir is cap-a, this is "Cap A"
+       '### Requirement: Req A → Scenario: scen-a', '',
+       '- **Case** T1: reject bad [negative]', '  - Input: bad()',
+       '  - Expected: reject', '  - it(): reject bad', '  - branch: reject-bad', ''].join('\n'));
+    try {
+      const res = await validateSpecFile(join(specsDir, 'cap-a', 'spec.md'));
+      // Falling back to all Cases → the Scenario IS covered → valid.
+      expect(res.valid).toBe(true);
+      // And a capability-mismatch warning is emitted.
+      expect(res.warnings.some((w) => /Capability name mismatch/i.test(w.message))).toBe(true);
+      // No misleading uncovered-scenario errors.
+      expect(res.errors.some((e) => /uncovered scenario/i.test(e.message))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

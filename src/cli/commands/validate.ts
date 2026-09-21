@@ -178,9 +178,25 @@ async function checkTestPlan(
   // all dangle (their Scenarios live in other spec files). The capability is
   // inferred from the spec path `.../specs/<capability>/spec.md`.
   const specCapability = inferCapability(specPath);
-  const relevantCases = specCapability
-    ? cases.filter((c) => c.capability === specCapability)
-    : cases;
+  let relevantCases = cases;
+  if (specCapability) {
+    const filtered = cases.filter((c) => c.capability === specCapability);
+    // Foot-gun guard: if the filter produced zero Cases but Cases exist, the
+    // test-plan's `## Capability:` names do not match the spec's directory name
+    // (e.g. author wrote `## Capability: Test Planning` but the dir is
+    // `test-planning`). Rather than reporting every delta Scenario as
+    // `uncovered-scenario` (misleading), fall back to all Cases and warn so the
+    // author fixes the capability-name mismatch.
+    if (filtered.length === 0 && cases.length > 0) {
+      warnings.push({
+        message: `Capability name mismatch: spec capability "${specCapability}" (from path) matches no ` +
+          `## Capability: in test-plan.md (found: ${[...new Set(cases.map((c) => c.capability))].filter(Boolean).join(', ') || '(none)'}). ` +
+          `Falling back to all Cases; fix the ## Capability: name to match the spec directory to enable per-capability filtering.`,
+      });
+    } else {
+      relevantCases = filtered;
+    }
+  }
   const baselineScenarios = await loadBaselineScenarios(changeRoot);
   const failureAdmittingRequirements = collectFailureAdmittingRequirements(deltaScenarios);
   const result = checkCoverage({
